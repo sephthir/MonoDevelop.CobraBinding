@@ -76,7 +76,7 @@
 	</Span>
 	
 	<Rule name="StringExpr">
-		<Span color="keyword.parameter" tagColor="text.punctuation">
+		<Span color="text.markup" tagColor="text.markup.tag">
 			<Begin>[</Begin>
 			<End>]</End>
 		</Span>
@@ -93,7 +93,7 @@
 	</Span>
 	
 	<!-- Generics -->
-	<Span color="keyword.parameter" tagColor="keyword.type">
+	<Span color="keyword.type" tagColor="text.markup">
 		<Begin>&lt;of </Begin>
 		<End>&gt;</End>
 	</Span>
@@ -112,12 +112,16 @@
 		<Word>mixin</Word>
 		<Word>adds</Word>
 		<Word>struct</Word>
-		<Word>extend</Word>
-		<Word>def</Word>
-		<Word>sig</Word>
-		<Word>as</Word>
+		<Word>extend</Word>		
+		<Word>as</Word>				
+	</Keywords>
+	
+	<!-- Let these show up in a different color than those above -->
+	<Keywords color="keyword.misc">
 		<Word>cue</Word>
 		<Word>var</Word>
+		<Word>def</Word>
+		<Word>sig</Word>
 		<Word>const</Word>
 		<Word>has</Word>
 		<Word>event</Word>

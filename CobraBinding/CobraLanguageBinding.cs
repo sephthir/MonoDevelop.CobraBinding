@@ -8,8 +8,6 @@ using System.CodeDom.Compiler;
 using MonoDevelop.Core;
 using MonoDevelop.Core.Assemblies;
 using MonoDevelop.Projects;
-using MonoDevelop.Projects.CodeGeneration;
-using MonoDevelop.Projects.Dom.Parser;
 
 namespace MonoDevelop.Cobra
 {
@@ -17,15 +15,19 @@ namespace MonoDevelop.Cobra
 	{
 		private bool _isWindows;
 		
-		public CobraLanguageBinding() {
+		public CobraLanguageBinding()
+		{
 			_isWindows = Environment.OSVersion.ToString().StartsWith("Microsoft Windows");
 		}
 		
 		public static ClrVersion[] SupportedClrVersions = { ClrVersion.Net_2_0, ClrVersion.Net_4_0 };
+
 		public static string LanguageName = "Cobra";
 		public static string SourceFileExtension = ".cobra";
+		public static string CommentTag = "#";
 
-		public ClrVersion[] GetSupportedClrVersions() {
+		public ClrVersion[] GetSupportedClrVersions()
+		{
 			return CobraLanguageBinding.SupportedClrVersions;
 		}
 
@@ -41,19 +43,23 @@ namespace MonoDevelop.Cobra
 			get { return "#/"; }
 		}
 
-		public FilePath GetFileName(FilePath fileNameWithoutExtension) {
+		public FilePath GetFileName(FilePath fileNameWithoutExtension)
+		{
 			return fileNameWithoutExtension.ChangeExtension(CobraLanguageBinding.SourceFileExtension);
 		}
 		
-		public string GetFileName(string fileNameWithoutExtension) {
+		public string GetFileName(string fileNameWithoutExtension)
+		{
 			return this.GetFileName(new FilePath(fileNameWithoutExtension));
 		}
 
-		public bool IsSourceCodeFile(FilePath fileName) {
+		public bool IsSourceCodeFile(FilePath fileName)
+		{
 			return fileName.Extension == CobraLanguageBinding.SourceFileExtension;
 		}
 		
-		public bool IsSourceCodeFile(string fileName) {
+		public bool IsSourceCodeFile(string fileName)
+		{
 			return this.IsSourceCodeFile(new FilePath(fileName));
 		}
 
@@ -62,7 +68,7 @@ namespace MonoDevelop.Cobra
 		}
 
 		public string SingleLineCommentTag {
-			get { return "#"; }
+			get { return CobraLanguageBinding.CommentTag; }
 		}
 
 		public BuildResult Compile(ProjectItemCollection items,
@@ -109,23 +115,22 @@ namespace MonoDevelop.Cobra
 
 
 			//what's the target assembly?
-			switch (configuration.CompileTarget)
-			{
-				case CompileTarget.Exe:
-					cmdArgsBuilder.Append(" -target:exe");
-					break;
+			switch (configuration.CompileTarget) {
+			case CompileTarget.Exe:
+				cmdArgsBuilder.Append(" -target:exe");
+				break;
 
-				case CompileTarget.Library:
-					cmdArgsBuilder.Append(" -target:lib");
-					break;
+			case CompileTarget.Library:
+				cmdArgsBuilder.Append(" -target:lib");
+				break;
 
-				case CompileTarget.WinExe:
-					cmdArgsBuilder.Append(" -target:winexe");
-					break;
+			case CompileTarget.WinExe:
+				cmdArgsBuilder.Append(" -target:winexe");
+				break;
 
-				case CompileTarget.Module:
-					cmdArgsBuilder.Append(" -target:module");
-					break;
+			case CompileTarget.Module:
+				cmdArgsBuilder.Append(" -target:module");
+				break;
 			}
 
 
@@ -137,14 +142,13 @@ namespace MonoDevelop.Cobra
 
 
 			//which files should we compile?
-			foreach (ProjectFile projFile in items.GetAll<ProjectFile>())
-			{
+			foreach (ProjectFile projFile in items.GetAll<ProjectFile>()) {
 				switch (projFile.BuildAction) {
-					case BuildAction.Compile:
-						cmdArgsBuilder.Append(" \"");
-						cmdArgsBuilder.Append(projFile.Name);
-						cmdArgsBuilder.Append("\"");
-						break;
+				case BuildAction.Compile:
+					cmdArgsBuilder.Append(" \"");
+					cmdArgsBuilder.Append(projFile.Name);
+					cmdArgsBuilder.Append("\"");
+					break;
 				}
 			}
 
@@ -168,8 +172,7 @@ namespace MonoDevelop.Cobra
 					 * See here for more info: http://msdn.microsoft.com/en-us/library/system.diagnostics.processstartinfo.useshellexecute.aspx
 					 */
 					cobraExe = "c:\\cobra\\bin\\cobra.bat";
-				}
-				else {
+				} else {
 					/*
 					 * On a non-windows based system, we'll rely on cobra being in
 					 * the user's path.
@@ -198,7 +201,8 @@ namespace MonoDevelop.Cobra
 
 			proc.Start();
 			proc.WaitForExit();
-			
+
+			//parse the compiler output and generate a MonoDevelop build result
 			var result = new BuildResult();
 			
 			var lines = new List<string>();
@@ -229,15 +233,12 @@ namespace MonoDevelop.Cobra
 
 						if (msgType == "error") {
 							result.AddError(fileName, lineNum, col, errNum, msg);
-						}
-						else {
+						} else {
 							result.AddWarning(fileName, lineNum, col, errNum, msg);
 						}
-					}
-					else if (line.Contains("error:")) {
+					} else if (line.Contains("error:")) {
 						result.AddError(line);
-					}
-					else if (line.Contains("warning:")) {
+					} else if (line.Contains("warning:")) {
 						result.AddWarning(line);
 					}
 				}
@@ -248,35 +249,23 @@ namespace MonoDevelop.Cobra
 			return result;
 		}
 
-		public ConfigurationParameters CreateCompilationParameters(XmlElement projectOptions) {
+		public ConfigurationParameters CreateCompilationParameters(XmlElement projectOptions)
+		{
 			//TODO
 			return new CobraCompilerParameters();
 		}
 
-		public ProjectParameters CreateProjectParameters(XmlElement projectOptions)  {
+		public ProjectParameters CreateProjectParameters(XmlElement projectOptions)
+		{
 			//TODO?
 			return new ProjectParameters();
 		}
 
-		public CodeDomProvider GetCodeDomProvider() {
+		public CodeDomProvider GetCodeDomProvider()
+		{
 			//TODO
 			// note that someone started a CodeDom provider awhile back. search the discussion forums and/or wiki
 			return null;
 		}
-
-		public IParser Parser {
-			get {
-				//This interface has been removed in MonoDevelop 3.0+
-				return null;
-			}
-		}
-		
-		public IRefactorer Refactorer {
-			get {
-				//This interface has been removed in MonoDevelop 3.0+
-				return null;
-			}
-		}
 	}
 }
-

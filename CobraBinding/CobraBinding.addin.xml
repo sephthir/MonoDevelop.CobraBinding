@@ -13,13 +13,15 @@
 	
 	<RunTime>
 		<Import assembly="MonoDevelop.CobraBinding.dll" />
+		<Import assembly="Cobra.Core.dll" />
+		<Import assembly="Cobra.Compiler.dll" />
 	</RunTime>
 	
 	<Dependencies>
-		<Addin id="Core" version="2.8.5"/>
-		<Addin id="Ide" version="2.8.5"/>
-		<Addin id="SourceEditor2" version="2.8.5"/>
-		<Addin id="Refactoring" version="2.8.5"/>
+		<Addin id="Core" version="3.0.0"/>
+		<Addin id="Ide" version="3.0.0"/>
+		<Addin id="SourceEditor2" version="3.0.0"/>
+		<Addin id="Refactoring" version="3.0.0"/>
 	</Dependencies>	
 	
 	<Extension path = "/MonoDevelop/ProjectModel/MSBuildItemTypes">
@@ -54,12 +56,32 @@
 		<LanguageBinding id="Cobra" supportedextensions=".cobra" class="MonoDevelop.Cobra.CobraLanguageBinding" />
 	</Extension>
 	
+	<Extension path = "/MonoDevelop/TypeSystem/Ambiences">
+		<Ambience mimeType="text/x-plain" class="MonoDevelop.Cobra.CobraAmbience" /> <!-- TODO: proper mimetypes -->
+		<Ambience mimeType="text/x-cobra" class="MonoDevelop.Cobra.CobraAmbience" />
+	</Extension>
+		
+	<Extension path = "/MonoDevelop/TypeSystem/Parser">
+		<Parser mimeType = "text/x-plain" class="MonoDevelop.Cobra.TypeSystemParser" /> <!-- TODO: proper mimetypes -->
+		<Parser mimeType = "text/x-cobra" class="MonoDevelop.Cobra.TypeSystemParser" />
+	</Extension>
+	
 	<Extension path = "/MonoDevelop/ProjectModel/SerializableClasses">
 		<DataType class = "MonoDevelop.Cobra.CobraCompilerParameters" />
+	</Extension>
+	
+	<Extension path = "/MonoDevelop/Ide/TextEditorExtensions">
+		<Class fileExtensions=".cobra" class="MonoDevelop.Cobra.CobraFormattingTextEditorExtension" />
+		<Class fileExtensions=".cobra" class="MonoDevelop.Cobra.CobraCompletionTextEditorExtension" />
+	</Extension>
+	
+	<Extension path = "/MonoDevelop/Ide/CodeFormatters">
+		<Formatter mimetype="text/x-plain" class="MonoDevelop.Cobra.CobraFormattingTextEditorExtension" /> <!-- TODO: proper mimetypes -->
+		<Formatter mimetype="text/x-cobra" class="MonoDevelop.Cobra.CobraFormattingTextEditorExtension" />
 	</Extension>
 	
 	<Extension path = "/MonoDevelop/SourceEditor2/SyntaxModes">
 		<Templates resource="CobraSyntaxMode.xml" />
 	</Extension>
 	
-</Addin>		
+</Addin>
