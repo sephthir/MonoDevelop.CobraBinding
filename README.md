@@ -3,27 +3,29 @@ Cobra Language Binding for MonoDevelop
 This is an addin for MonoDevelop that allows you to write, run, and debug programs written in the Cobra programming language.
 http://cobra-language.com/
 
-At present, this addin only works on the 2.8 series of MonoDevelop.
+At present, this addin only works on the 3.0 series of MonoDevelop.
 
 
 To Compile and Use
 ------------------
 
-1) Open the solution file in MonoDevelop 2.8
+1) Compile or install Cobra and then copy the Cobra.Compiler.dll and Cobra.Core.dll assembly files into the CobraBinding/bin folder. The addin uses these for parsing the Cobra source code.
 
-2) Select Build > Build All.  This will generate a MonoDevelop.CobraBinding.dll assembly file in CobraBinding/bin/Debug.
+2) Open the solution file in MonoDevelop 3.0
 
-3) Copy MonoDevelop.CobraBinding.dll to the MonoDevelop addins folder. This location depends on your operating system.
+3) Select Build > Build All.  This will generate a MonoDevelop.CobraBinding.dll assembly file in CobraBinding/bin/Debug.
 
-- Ubuntu : ~/.local/share/MonoDevelop-2.8/LocalInstall/Addins
+4) Copy MonoDevelop.CobraBinding.dll to the MonoDevelop addins folder. This location depends on your operating system.
 
-- Mac : ~/Library/Application Support/MonoDevelop-2.8/LocalInstall/Addins
+- Ubuntu : ~/.local/share/MonoDevelop-3.0/LocalInstall/Addins
 
-- Windows 7 : ~/AppData/Local/MonoDevelop-2.8/LocalInstall/Addins (on Windows ~ is usually c:\users\<username>, also note that AppData is a hidden folder)
+- Mac : ~/Library/Application Support/MonoDevelop-3.0/LocalInstall/Addins
+
+- Windows 7 : ~/AppData/Local/MonoDevelop-3.0/LocalInstall/Addins (on Windows ~ is usually c:\users\<username>, also note that AppData is a hidden folder)
 
 If any folders do not exist, you should create them manually.
 
-4) Restart MonoDevelop and you should now have a "Cobra" section when creating a new project/solution.
+5) Restart MonoDevelop and you should now have a "Cobra" section when creating a new project/solution.
 
 
 Contributing
@@ -48,7 +50,7 @@ These will require a bit more effort...
 
 * Proper handling for project options and compiler configuration.
 
-* Parser, Autocompletion, code formatting, code folding, etc.
+* Parser, Autocompletion, code formatting, code folding, etc. (this task is in progress)
 
 * Rewrite it in Cobra! This one will actually be easy once the other tasks are done ;)
 
