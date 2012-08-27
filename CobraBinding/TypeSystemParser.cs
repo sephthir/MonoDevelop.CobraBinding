@@ -7,8 +7,9 @@ using Cobra.Compiler;
 
 namespace MonoDevelop.Cobra
 {
+	// TODO: Using the Cobra visitor may be too slow for this application.
 
-	// TODO: Using the Cobra visitor may be too slow for this application
+	// TODO: Do we need a separate FoldingParser?  Doesn't seem like it...
 	public class TypeSystemParser : 
 		global::Cobra.Core.Visitor,
 		MonoDevelop.Ide.TypeSystem.ITypeSystemParser
@@ -24,18 +25,32 @@ namespace MonoDevelop.Cobra
 		public TypeSystemParser()
 		{
 			_options = new OptionValues();
-			_options.Add("compile", "compile");
+			_options.Add("compile", true);
 			_options.Add("back-end", "clr");
-			_options.Add("ert", "no");
+			_options.Add("turbo", true);
 			_options.Add("number", "decimal");
+			//TODO: use references from project
+			var _refs = new List<String>();
+			_refs.Add("mscorlib");
+			_refs.Add("Cobra.Core");
+			_options.Add("reference", _refs);
 		}
-		
+
+		/*
+		 * This is the name of the method that will be called by the visitor
+		 */
 		public override string MethodName {
 			get { return "Visit"; }
 		}
 
+		/*
+		 * This parses Cobra source code, takes the resulting AST and converts
+		 * it to a format usable with MonoDevelop and NRefactory.  This is then 
+		 * used later for autocompletion in CobraCompletionTextEditorExtension.
+		 */
 		//TODO: Clean up this mess
-		public MonoDevelop.Ide.TypeSystem.ParsedDocument Parse(bool storeAst, string fileName, System.IO.TextReader content, MonoDevelop.Projects.Project project = null)
+		public MonoDevelop.Ide.TypeSystem.ParsedDocument Parse(
+			bool storeAst, string fileName, System.IO.TextReader content, MonoDevelop.Projects.Project project = null)
 		{
 			_content = content.ReadToEnd();
 			var reader = new System.IO.StringReader(_content);
@@ -55,12 +70,22 @@ namespace MonoDevelop.Cobra
 
 			//The parser needs a valid compiler and backend
 			var c = new Compiler(0); //verbosity = 0
+
 			c.Options = _options;
 			c.InitBackEnd();
+			c.AddRunTimeRef(_options);
 			
 			//If we don't set these then we can't resolve all types
 			Node.SetCompiler(c);
 			Node.TypeProvider = c;
+
+			try {
+				//new BindRunTimeLibraryPhase(c).Run();
+				//new ReadLibrariesPhase(c).Run();
+			}
+			catch (Exception e) {
+				Console.WriteLine("Exception occurred calling ReadLibrariesPhase.Run(): " + e.Message);
+			}
 			
 			//setup the parser
 			var parser = new CobraParser();
@@ -86,21 +111,19 @@ namespace MonoDevelop.Cobra
 			
 			if (module != null) {		
 				try {
-					c.CurModule = module;			
+					c.CurModule = module;
 					Box.SetCompiler(c);
-					/*
-					new BindUsePhase(c).Run();
-					new BindInheritancePhase(c).Run();
-					new BindInterfacePhase(c).Run();
-					new ComputeMatchingBaseMembersPhase(c).Run();
-					new BindImplementationPhase(c).Run();
-					new IdentifyMainPhase(c).Run();
-					new GenerateSharpCodePhase(c).Run();
-					new CompileSharpCodePhase(c).Run();
-					*/
+
+					new BindUsePhase(c).Run();	
+					//new BindInheritancePhase(c).Run();
+					//new BindInterfacePhase(c).Run();
+					//new ComputeMatchingBaseMembersPhase(c).Run();
+					//new BindImplementationPhase(c).Run();
+					//new IdentifyMainPhase(c).Run();
+					//new GenerateSharpCodePhase(c).Run();
+					//new CompileSharpCodePhase(c).Run();
 				} catch (Exception e) {
-					//hmmm...what should we do with this?
-					MonoDevelop.Core.LoggingService.LogDebug(e.Message);
+					Console.WriteLine("exception occurred during binding " + e.Message);
 				}			
 			}
 			
@@ -118,7 +141,10 @@ namespace MonoDevelop.Cobra
 			}
 
 			if (storeAst) {
-				parsedDoc.Ast = module;
+				//parsedDoc.Ast = module;
+				var topLevel =  new ICSharpCode.NRefactory.TypeSystem.Implementation.DefaultUnresolvedTypeDefinition();
+				topLevel.Name = "DidItWork";
+				parsedDoc.Ast = topLevel;
 			}
 			
 			_comments = new List<MonoDevelop.Ide.TypeSystem.Tag>();
@@ -190,7 +216,9 @@ namespace MonoDevelop.Cobra
 			return lastRow;
 		}
 
-		private void _AddRegion(int firstRow)
+		private void _AddRegion(int firstRow,
+		                        bool foldByDefault = false,
+		                        MonoDevelop.Ide.TypeSystem.FoldType foldType = MonoDevelop.Ide.TypeSystem.FoldType.Undefined)
 		{
 			int lastRow = _GetLastRow(firstRow);					
 			int firstCol = _lines[firstRow].Length + 1; //add 1 so we don't hide the last character of the class name
@@ -200,11 +228,10 @@ namespace MonoDevelop.Cobra
 				return;
 			}
 
-			var foldType = MonoDevelop.Ide.TypeSystem.FoldType.Undefined;
 			var domRegion = new ICSharpCode.NRefactory.TypeSystem.DomRegion(
 				firstRow, firstCol, lastRow, lastCol);
 			
-			var fold = new MonoDevelop.Ide.TypeSystem.FoldingRegion("...", domRegion, foldType, false);
+			var fold = new MonoDevelop.Ide.TypeSystem.FoldingRegion("...", domRegion, foldType, foldByDefault);
 			_folds.Add(fold);
 		}
 
@@ -220,62 +247,80 @@ namespace MonoDevelop.Cobra
 			}
 		}
 
+		//classes and interfaces
+		public void Visit(Box b)
+		{
+			foreach (IBoxMember m in b.AllMembers()) {
+				this.Dispatch(m);
+			}
+
+			foreach (TestMethod t in b.TestMethods) {
+				this.Dispatch(t);
+			}
+
+			if (b.HasInvariants) {
+				//TODO
+			}
+
+			_AddRegion(b.Token.LineNum);
+		}
+
+
 		public void Visit(EnumDecl e)
 		{
 			_AddRegion(e.Token.LineNum);
 		}
-		
-		public void Visit(Class c)
-		{
-			foreach (IBoxMember m in c.AllMembers()) {
-				this.Dispatch(m);
-			}
 
-			foreach (var t in c.TestMethods) {
+		public void Visit(BoxMember m)
+		{
+			_AddRegion(m.Token.LineNum);
+
+			foreach (TestMethod t in m.TestMethods) {
 				this.Dispatch(t);
 			}
-
-			_AddRegion(c.Token.LineNum);
-		}
-
-		public void Visit(Initializer i)
-		{
-			_AddRegion(i.Token.LineNum);
 		}
 
 		public void Visit(TestMethod t)
 		{
 			_AddRegion(t.Token.LineNum);
+
+			foreach (Stmt s in t.Statements) {
+				this.Dispatch(s);
+			}
 		}
 
-		public void Visit(Method m)
+		public void Visit(AbstractMethod m)
 		{
+			foreach (TestMethod t in m.TestMethods) {
+				this.Dispatch(t);
+			}
+
+			if (m.RequirePart != null) {
+				this.Dispatch(m.RequirePart);
+			}
+
+			if (m.EnsurePart != null) {
+				this.Dispatch(m.EnsurePart);
+			}
+
+			this.Dispatch(m.Statements);
 			_AddRegion(m.Token.LineNum);
 		}
 
-		public void Visit(Field f)
+		public void Visit(ContractPart c)
 		{
-			return;
+			_AddRegion(c.Token.LineNum);
 		}
 
-		public void Visit(BoxVar v)
-		{
-			return;
-		}
-
-		public void Visit(Property p)
-		{
-			_AddRegion(p.Token.LineNum);
-		}
-
-		public void Visit(PropertyGetter g)
-		{
-			_AddRegion(g.Token.LineNum);
-		}
-
-		public void Visit(PropertySetter s)
+		public void Visit(Stmt s)
 		{
 			_AddRegion(s.Token.LineNum);
 		}
+
+		public void Visit(AssemblyDecl a)
+		{
+			_AddRegion(a.Token.LineNum);
+		}
+
 	}
 }

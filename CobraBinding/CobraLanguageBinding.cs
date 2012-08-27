@@ -76,14 +76,15 @@ namespace MonoDevelop.Cobra
 		                           ConfigurationSelector configSelector,
 		                           IProgressMonitor monitor)
 		{
-			//var compilerParameters = (CobraCompilerParameters)configuration.CompilationParameters;
+			var compilerParams = (CobraCompilerParameters)configuration.CompilationParameters;
 			//var projParameters = (CobraProjectParameters)configuration.ProjectParameters;
 
 			StringBuilder cmdArgsBuilder = new StringBuilder("-compile");
-			
-			//TODO: make this conditional
-			cmdArgsBuilder.Append(" -debug:full");
 
+			cmdArgsBuilder.Append(" -debug:");
+			cmdArgsBuilder.Append(compilerParams.Debug);
+
+			//TODO: Rest of compiler parameters
 
 			//references (add each one only once)
 			var refs = new HashSet<string>();
@@ -251,8 +252,13 @@ namespace MonoDevelop.Cobra
 
 		public ConfigurationParameters CreateCompilationParameters(XmlElement projectOptions)
 		{
-			//TODO
-			return new CobraCompilerParameters();
+			var compilerParams = new CobraCompilerParameters();
+
+			if (projectOptions != null) {
+				//TODO
+			}
+
+			return compilerParams;
 		}
 
 		public ProjectParameters CreateProjectParameters(XmlElement projectOptions)

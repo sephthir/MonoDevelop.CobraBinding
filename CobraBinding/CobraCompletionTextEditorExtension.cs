@@ -117,12 +117,14 @@ namespace MonoDevelop.Cobra
 		
 		
 		//TODO
-		public override MonoDevelop.Ide.CodeCompletion.ICompletionDataList CodeCompletionCommand(MonoDevelop.Ide.CodeCompletion.CodeCompletionContext completionContext)
+		public override MonoDevelop.Ide.CodeCompletion.ICompletionDataList CodeCompletionCommand(
+			MonoDevelop.Ide.CodeCompletion.CodeCompletionContext completionContext)
 		{
 			var dataList = new MonoDevelop.Ide.CodeCompletion.CompletionDataList();
-			
-			dataList.AddRange(_implicitComplData);
-			dataList.AddRange(_keywords);
+
+			dataList.Add(this.GetTypeAt(completionContext.TriggerOffset).Name);
+			//dataList.AddRange(_implicitComplData);
+			//dataList.AddRange(_keywords);
 			
 			return dataList;
 		}
@@ -149,12 +151,15 @@ namespace MonoDevelop.Cobra
 		//TODO
 		public ICSharpCode.NRefactory.TypeSystem.IUnresolvedTypeDefinition GetTypeAt(int offset)
 		{
-			return null;
+			Console.WriteLine("GetTypeAt " + offset.ToString());
+			return (ICSharpCode.NRefactory.TypeSystem.Implementation.DefaultUnresolvedTypeDefinition)
+				document.ParsedDocument.Ast;
 		}
 		
 		//TODO
 		public ICSharpCode.NRefactory.TypeSystem.IUnresolvedMember GetMemberAt(int offset)
 		{
+			Console.WriteLine("GetMemberAt " + offset.ToString());
 			return null;
 		}
 	}
