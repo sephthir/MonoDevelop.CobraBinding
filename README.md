@@ -1,6 +1,6 @@
 Cobra Language Binding for MonoDevelop
 ======================================
-This branch is for expirmental code that adds new features and breaks existing ones.  You should only use it if you want to hack on the addin itself.
+This branch is for experimental code that adds new features and breaks existing ones.  You should only use it if you want to hack on the addin itself.
 
 This is an addin for MonoDevelop that allows you to write, run, and debug programs written in the Cobra programming language.
 http://cobra-language.com/
