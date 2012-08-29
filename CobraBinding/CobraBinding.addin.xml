@@ -53,7 +53,7 @@
 	</Extension>
 	
 	<Extension path="/MonoDevelop/ProjectModel/LanguageBindings">
-		<LanguageBinding id="Cobra" supportedextensions=".cobra" class="MonoDevelop.Cobra.CobraLanguageBinding" />
+		<LanguageBinding id="Cobra" supportedextensions=".cobra" class="MonoDevelop.CobraBinding.CobraLanguageBinding" />
 	</Extension>
 	
 	<Extension path = "/MonoDevelop/TypeSystem/Ambiences">
@@ -67,7 +67,7 @@
 	</Extension>
 	
 	<Extension path = "/MonoDevelop/ProjectModel/SerializableClasses">
-		<DataType class = "MonoDevelop.Cobra.CobraCompilerParameters" />
+		<DataType class = "MonoDevelop.CobraBinding.CobraCompilerParameters" />
 	</Extension>
 	
 	<Extension path = "/MonoDevelop/Ide/TextEditorExtensions">
