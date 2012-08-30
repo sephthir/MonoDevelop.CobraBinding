@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace MonoDevelop.Cobra
+namespace MonoDevelop.CobraBinding
 {
 	//Let's use fully-qualified names until we are familiar with these libraries...
 	public class CobraCompletionTextEditorExtension : 

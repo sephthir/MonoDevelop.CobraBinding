@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 using ICSharpCode.NRefactory.TypeSystem;
 
-namespace MonoDevelop.Cobra
+namespace MonoDevelop.CobraBinding
 {
 	public class CobraAmbience : MonoDevelop.Ide.TypeSystem.Ambience
 	{

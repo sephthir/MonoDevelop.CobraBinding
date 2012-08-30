@@ -5,13 +5,12 @@ using ICSharpCode.NRefactory.TypeSystem;
 
 using Cobra.Compiler;
 
-namespace MonoDevelop.Cobra
+namespace MonoDevelop.CobraBinding
 {
-	// TODO: Using the Cobra visitor may be too slow for this application.
-
-	// TODO: Do we need a separate FoldingParser?  Doesn't seem like it...
+	// TODO: Create a mechanism that just generates folds for when the Cobra
+	// parser can't parse the given code.  That way, we can still generate folds.
 	public class TypeSystemParser : 
-		global::Cobra.Core.Visitor,
+		Cobra.Core.Visitor,
 		MonoDevelop.Ide.TypeSystem.ITypeSystemParser
 	{
 		private OptionValues _options;

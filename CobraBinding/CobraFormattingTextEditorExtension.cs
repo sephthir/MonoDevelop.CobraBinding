@@ -1,6 +1,6 @@
 using System;
 
-namespace MonoDevelop.Cobra
+namespace MonoDevelop.CobraBinding
 {
 	public class CobraFormattingTextEditorExtension : MonoDevelop.Ide.Gui.Content.TextEditorExtension
 	{

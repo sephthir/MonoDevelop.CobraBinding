@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace MonoDevelop.Cobra
+namespace MonoDevelop.CobraBinding
 {
 	public class CobraParsedFile : ICSharpCode.NRefactory.TypeSystem.IParsedFile
 	{

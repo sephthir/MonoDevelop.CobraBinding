@@ -57,13 +57,13 @@
 	</Extension>
 	
 	<Extension path = "/MonoDevelop/TypeSystem/Ambiences">
-		<Ambience mimeType="text/x-plain" class="MonoDevelop.Cobra.CobraAmbience" /> <!-- TODO: proper mimetypes -->
-		<Ambience mimeType="text/x-cobra" class="MonoDevelop.Cobra.CobraAmbience" />
+		<Ambience mimeType="text/x-plain" class="MonoDevelop.CobraBinding.CobraAmbience" /> <!-- TODO: proper mimetypes -->
+		<Ambience mimeType="text/x-cobra" class="MonoDevelop.CobraBinding.CobraAmbience" />
 	</Extension>
 		
 	<Extension path = "/MonoDevelop/TypeSystem/Parser">
-		<Parser mimeType = "text/x-plain" class="MonoDevelop.Cobra.TypeSystemParser" /> <!-- TODO: proper mimetypes -->
-		<Parser mimeType = "text/x-cobra" class="MonoDevelop.Cobra.TypeSystemParser" />
+		<Parser mimeType = "text/x-plain" class="MonoDevelop.CobraBinding.TypeSystemParser" /> <!-- TODO: proper mimetypes -->
+		<Parser mimeType = "text/x-cobra" class="MonoDevelop.CobraBinding.TypeSystemParser" />
 	</Extension>
 	
 	<Extension path = "/MonoDevelop/ProjectModel/SerializableClasses">
@@ -71,13 +71,13 @@
 	</Extension>
 	
 	<Extension path = "/MonoDevelop/Ide/TextEditorExtensions">
-		<Class fileExtensions=".cobra" class="MonoDevelop.Cobra.CobraFormattingTextEditorExtension" />
-		<Class fileExtensions=".cobra" class="MonoDevelop.Cobra.CobraCompletionTextEditorExtension" />
+		<Class fileExtensions=".cobra" class="MonoDevelop.CobraBinding.CobraFormattingTextEditorExtension" />
+		<Class fileExtensions=".cobra" class="MonoDevelop.CobraBinding.CobraCompletionTextEditorExtension" />
 	</Extension>
 	
 	<Extension path = "/MonoDevelop/Ide/CodeFormatters">
-		<Formatter mimetype="text/x-plain" class="MonoDevelop.Cobra.CobraFormattingTextEditorExtension" /> <!-- TODO: proper mimetypes -->
-		<Formatter mimetype="text/x-cobra" class="MonoDevelop.Cobra.CobraFormattingTextEditorExtension" />
+		<Formatter mimetype="text/x-plain" class="MonoDevelop.CobraBinding.CobraFormattingTextEditorExtension" /> <!-- TODO: proper mimetypes -->
+		<Formatter mimetype="text/x-cobra" class="MonoDevelop.CobraBinding.CobraFormattingTextEditorExtension" />
 	</Extension>
 	
 	<Extension path = "/MonoDevelop/SourceEditor2/SyntaxModes">
