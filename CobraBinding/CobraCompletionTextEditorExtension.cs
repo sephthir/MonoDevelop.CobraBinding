@@ -122,7 +122,14 @@ namespace MonoDevelop.CobraBinding
 		{
 			var dataList = new MonoDevelop.Ide.CodeCompletion.CompletionDataList();
 
-			dataList.Add(this.GetTypeAt(completionContext.TriggerOffset).Name);
+			try {
+				Cobra.Compiler.Class c = ((UnresolvedClass)this.GetTypeAt(completionContext.TriggerOffset)).Class;
+				foreach (var m in c.AllMembers()) {
+					dataList.Add(m.Name);
+				}
+			} catch (Exception) {
+			}
+
 			//dataList.AddRange(_implicitComplData);
 			//dataList.AddRange(_keywords);
 			
@@ -152,8 +159,7 @@ namespace MonoDevelop.CobraBinding
 		public ICSharpCode.NRefactory.TypeSystem.IUnresolvedTypeDefinition GetTypeAt(int offset)
 		{
 			Console.WriteLine("GetTypeAt " + offset.ToString());
-			return (ICSharpCode.NRefactory.TypeSystem.Implementation.DefaultUnresolvedTypeDefinition)
-				document.ParsedDocument.Ast;
+			return (UnresolvedClass) document.ParsedDocument.Ast;
 		}
 		
 		//TODO

@@ -20,6 +20,8 @@ namespace MonoDevelop.CobraBinding
 		private List<MonoDevelop.Ide.TypeSystem.ConditionalRegion> _conditionals;
 		private string _content;
 		private Dictionary<int, string> _lines;
+
+		private UnresolvedClass _testing;
 		
 		public TypeSystemParser()
 		{
@@ -139,11 +141,8 @@ namespace MonoDevelop.CobraBinding
 				_errors.Add(warning);
 			}
 
-			if (storeAst) {
-				//parsedDoc.Ast = module;
-				var topLevel =  new ICSharpCode.NRefactory.TypeSystem.Implementation.DefaultUnresolvedTypeDefinition();
-				topLevel.Name = "DidItWork";
-				parsedDoc.Ast = topLevel;
+			if (storeAst && _testing != null) {
+				parsedDoc.Ast = _testing;
 			}
 			
 			_comments = new List<MonoDevelop.Ide.TypeSystem.Tag>();
@@ -249,6 +248,10 @@ namespace MonoDevelop.CobraBinding
 		//classes and interfaces
 		public void Visit(Box b)
 		{
+			if (b.GetType() == new Class(b.Name, new List<Cobra.Compiler.IType>()).GetType()) {
+				_testing = new UnresolvedClass((Class)b);
+			}
+
 			foreach (IBoxMember m in b.AllMembers()) {
 				this.Dispatch(m);
 			}

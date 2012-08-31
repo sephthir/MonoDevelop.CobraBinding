@@ -74,11 +74,14 @@
     <Compile Include="CobraAmbience.cs" />
     <Compile Include="TypeSystemParser.cs" />
     <Compile Include="CobraParsedFile.cs" />
+    <Compile Include="TypeSystem\UnresolvedTypeDefinition.cs" />
+    <Compile Include="TypeSystem\Resolver.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ItemGroup>
     <Folder Include="bin\" />
     <Folder Include="icons\" />
+    <Folder Include="TypeSystem\" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="templates\EmptyCobraFile.xft.xml">
