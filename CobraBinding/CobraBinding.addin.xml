@@ -54,17 +54,7 @@
 	<Extension path="/MonoDevelop/ProjectModel/LanguageBindings">
 		<LanguageBinding id="Cobra" supportedextensions=".cobra" class="MonoDevelop.CobraBinding.CobraLanguageBinding" />
 	</Extension>
-	
-	<Extension path = "/MonoDevelop/TypeSystem/Ambiences">
-		<Ambience mimeType="text/x-plain" class="MonoDevelop.CobraBinding.CobraAmbience" /> <!-- TODO: proper mimetypes -->
-		<Ambience mimeType="text/x-cobra" class="MonoDevelop.CobraBinding.CobraAmbience" />
-	</Extension>
 		
-	<Extension path = "/MonoDevelop/TypeSystem/Parser">
-		<Parser mimeType = "text/x-plain" class="MonoDevelop.CobraBinding.TypeSystemParser" /> <!-- TODO: proper mimetypes -->
-		<Parser mimeType = "text/x-cobra" class="MonoDevelop.CobraBinding.TypeSystemParser" />
-	</Extension>
-	
 	<Extension path = "/MonoDevelop/ProjectModel/SerializableClasses">
 		<DataType class = "MonoDevelop.CobraBinding.Project.CobraCompilerParameters" />
 	</Extension>
