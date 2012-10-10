@@ -9,12 +9,11 @@
 	url = "http://cobra-language.com"
 	description = "Provides support for using the Cobra programming language in MonoDevelop."
 	category = "Language bindings"
-	version = "0.1">	
+	version = "0.2">
 	
 	<RunTime>
 		<Import assembly="MonoDevelop.CobraBinding.dll" />
-		<Import assembly="Cobra.Core.dll" />
-		<Import assembly="Cobra.Compiler.dll" />
+		<Import assembly="MonoDevelop.CobraBinding.Gui.dll" />
 	</RunTime>
 	
 	<Dependencies>
@@ -67,21 +66,27 @@
 	</Extension>
 	
 	<Extension path = "/MonoDevelop/ProjectModel/SerializableClasses">
-		<DataType class = "MonoDevelop.CobraBinding.CobraCompilerParameters" />
+		<DataType class = "MonoDevelop.CobraBinding.Project.CobraCompilerParameters" />
 	</Extension>
 	
-	<Extension path = "/MonoDevelop/Ide/TextEditorExtensions">
-		<Class fileExtensions=".cobra" class="MonoDevelop.CobraBinding.CobraFormattingTextEditorExtension" />
-		<Class fileExtensions=".cobra" class="MonoDevelop.CobraBinding.CobraCompletionTextEditorExtension" />
+	<Extension path = "/MonoDevelop/ProjectModel/Gui/ItemOptionPanels/Build/Compiler">
+		<Condition id="ActiveLanguage" value="Cobra">
+			<Panel id="CompilerBuildOptionsPanel" _label="Compiler" class="MonoDevelop.CobraBinding.Project.CompilerBuildOptionsPanel" />
+		</Condition>
 	</Extension>
-	
-	<Extension path = "/MonoDevelop/Ide/CodeFormatters">
-		<Formatter mimetype="text/x-plain" class="MonoDevelop.CobraBinding.CobraFormattingTextEditorExtension" /> <!-- TODO: proper mimetypes -->
-		<Formatter mimetype="text/x-cobra" class="MonoDevelop.CobraBinding.CobraFormattingTextEditorExtension" />
-	</Extension>
-	
+
 	<Extension path = "/MonoDevelop/SourceEditor2/SyntaxModes">
 		<Templates resource="CobraSyntaxMode.xml" />
+	</Extension>
+	
+	<Extension path = "/MonoDevelop/TypeSystem/Parser">
+		<Parser mimeType = "text/x-plain" class="MonoDevelop.CobraBinding.TypeSystem.Parser" /> <!-- TODO: proper mimetypes -->
+		<Parser mimeType = "text/x-cobra" class="MonoDevelop.CobraBinding.TypeSystem.Parser" />
+	</Extension>
+	
+	<Extension path = "/MonoDevelop/TypeSystem/FoldingParser">
+		<Parser mimeType = "text/x-plain" class="MonoDevelop.CobraBinding.TypeSystem.Parser" /> <!-- TODO: proper mimetypes -->
+		<Parser mimeType = "text/x-cobra" class="MonoDevelop.CobraBinding.TypeSystem.Parser" />
 	</Extension>
 	
 </Addin>

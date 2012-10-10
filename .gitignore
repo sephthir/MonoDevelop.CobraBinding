@@ -1,9 +1,11 @@
 CobraBinding/[Oo]bj/
 CobraBinding/[Bb]in/
+Gui/[Oo]bj/
+Gui/[Bb]in/
 *.suo
 *.pidb
 *.userprefs
 *.user
-*.dll
 *.pdb
 *.cache
+install.exe*
