@@ -1,0 +1,86 @@
+use Cobra.Compiler
+
+namespace MonoDevelop.CobraBinding.TypeSystem
+
+class CobraAstVisitor inherits Cobra.Core.Visitor
+	
+	get methodName as String is override
+		return "visit"
+		
+	def visit(n as Node)
+		print "\t\tvisiting Node [n.getType.toString] TODO!"
+		
+	def visit(m as CobraModule)
+		print "visiting CobraModule [m.fileName]"
+		print
+		for d in m.topNameSpace.declsInOrder
+			.dispatch(d)
+		
+	def visit(m as AssemblyModule)
+		print "visiting AssemblyModule [m.fileName]"
+		print
+		
+	def visit(ns as NameSpace)
+		print "visiting NameSpace [ns.token]"
+		print
+		.dispatch(ns.declsInOrder)
+		
+	def visit(ms as MethodSig)
+		print "\tvisiting MethodSig [ms.idToken]"
+		
+	def visit(c as Class)
+		print "\tvisiting Class [c.idToken]"
+		.dispatch(c.declsInOrder)
+		
+	def visit(i as Initializer)
+		print "\t\tvisiting Initialiazer for [i.parentBox.idToken]"
+		
+	def visit(bv as BoxVar)
+		print "\t\tvisiting BoxVar [bv.idToken]"
+		
+	def visit(bc as BoxConst)
+		print "\t\tvisiting BoxConst [bc.idToken]"
+		
+	def visit(m as Mixin)
+		print "\tvisiting Mixin [m.idToken]"
+		.dispatch(m.declsInOrder)
+		
+	def visit(i as Interface)
+		print "\tvisiting Interface [i.idToken]"
+		.dispatch(i.declsInOrder)
+		
+	def visit(s as Struct)
+		print "\tvisiting Struct [s.idToken]"
+		.dispatch(s.declsInOrder)
+	
+	def visit(e as EnumDecl)
+		print "\tvisiting EnumDecl [e.idToken]"
+		.dispatch(e.declsInOrder)
+		
+	def visit(p as Property)
+		print "\t\tvisiting Property [p.idToken]"
+		print "\t\t\tgetPart = [p.getPart]"
+		print "\t\t\tsetPart = [p.setPart]"
+		
+	def visit(gp as GenericParam)
+		print "\t\tvisiting GenericParam [gp.idString]"		
+		
+	def visit(gcc as GenericClassConstraint)
+		print "\t\tvisiting GenericClassConstraint [gcc.idString]"
+	
+	def visit(gsc as GenericStructConstraint)
+		print "\t\tvisiting GenericStructConstraint [gsc.idString]"
+	
+	def visit(gcc as GenericCallableConstraint)
+		print "\t\tvisiting GenericCallableConstraint [gcc.idString]"
+	
+	def visit(gtc as GenericTypeConstraint)
+		print "\t\tvisiting GenericTypeConstraint [gtc.idString]"
+	
+	def visit(e as Extension)
+		print "\tvisiting Extension [e.idString]"
+		.dispatch(e.declsInOrder)
+	
+	def visit(m as Method)
+		print "\t\tvisiting Method [m.idToken]"
+		.dispatch(m.statements)

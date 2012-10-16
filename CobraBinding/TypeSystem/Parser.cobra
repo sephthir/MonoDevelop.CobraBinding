@@ -41,6 +41,8 @@ class Parser implements ITypeSystemParser, IFoldingParser
 			trace project.policies.directHas<of TextStylePolicy>
 		#/
 		
+		trace fileName
+		
 		# read the file content
 		source = content.readToEnd
 		
@@ -49,6 +51,10 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		
 		# the parser needs a valid compiler and backend
 		compiler = Compiler(0) # verbosity = 0
+		
+		# TODO: Figure out why/when I need to do this
+		Node.setCompiler(compiler)
+		Node.typeProvider = compiler
 		
 		options = OptionValues()
 		# TODO: Figure out what options are really necessary
@@ -59,11 +65,24 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		
 		compiler.options = options
 		compiler.initBackEnd
-		# TODO: Add project references
+		backEnd = compiler.backEnd
 		
-		# TODO: Figure out why/when I need to do this
-		Node.setCompiler(compiler)
-		Node.typeProvider = compiler
+		# TODO: review previous parsing results (if any)
+		parsedFileCount = 0
+		prevModule as CobraModule? = nil
+		
+		# Add project references
+		compiler.addRunTimeRef(options)
+		compiler.readSystemTypes
+		
+		if project <> nil
+			dotNetProj = project to DotNetProject
+		
+			for projRef in dotNetProj.references
+				for refFileName in projRef.getReferencedFileNames(ConfigurationSelector.default)
+					errMsg = compiler.loadReference(refFileName, false)
+					if errMsg <> nil
+						trace errMsg #TODO: pass this on to MonoDevelop
 		
 		# initialize the parser
 		parser.typeProvider = compiler
@@ -76,10 +95,13 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		module as CobraModule? = nil
 		try
 			module = parser.parseSource(fileName, source)
+			compiler.modules.add(module)
+			
+			for parserRef in parser.references #TODO: We don't have an arg parser so this loop will never be entered I believe
+				compiler.loadReference(backEnd.fixLibExtension(parserRef), false)
+			
 		catch ex as Exception
 			compiler.errors.add(SourceException(ex.message))
-			
-		# TODO: Type checking
 		
 		# add folds
 		parsedDoc = .parse(fileName, source) to DefaultParsedDocument #TODO? to ParsedCobraDocument?
@@ -89,13 +111,66 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		
 		for e in compiler.errors		
 			errors.add(Error( _
-				ErrorType.Error, e.message, e.lineNum, 0))
+				ErrorType.Error, e.message, e.lineNum, e.colNum))
 				
 		for w in compiler.warnings
 			errors.add(Error( _
-				ErrorType.Warning, w.message, w.lineNum, 0))
+				ErrorType.Warning, w.message, w.lineNum, w.colNum))
 			
 		parsedDoc.add(errors)
+		
+		
+		
+		
+		trace errors.count
+		if errors.count == 0
+			try
+				# bind use
+				for mod in compiler.modules.clone
+					compiler.curModule = mod # TODO: is this necessary?
+					mod.bindUse
+				
+				# bind inheritance
+				for basicType in compiler.basicTypes
+					basicType.bindInh
+				compiler.objectType.bindInh
+				compiler.stringType.bindInh
+				compiler.dynamicType.bindInh
+				compiler.passThroughType.bindInh
+				compiler.voidType.bindInh
+		
+				for mod in compiler.modules.clone
+					compiler.curModule = mod
+					mod.bindInh
+					
+				# bind interface
+				compiler.fixMemberSigs
+				for basicType in compiler.basicTypes
+					basicType.bindInt
+				compiler.objectType.bindInt
+				compiler.stringType.bindInt
+				compiler.dynamicType.bindInt
+				compiler.passThroughType.bindInt
+				compiler.voidType.bindInt
+				
+				for mod in compiler.modules.clone
+					compiler.curModule = mod
+					mod.bindInh
+					
+				# compute matching base members phase
+				for mod in compiler.modules
+					compiler.curModule = mod
+					mod.computeMatchingBaseMembers
+				
+				# bind implementation
+				BindImplementationPhase(compiler).innerRun
+				
+			catch sourceEx as SourceException
+				trace sourceEx.message
+				parsedDoc.add(Error(ErrorType.Error, sourceEx.message))
+				
+		
+				
 		
 		#doc = MonoDevelop.Ide.IdeApp.workbench.getDocument(fileName)
 		if storeAst
@@ -114,9 +189,7 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		
 		Parse the specified file to generate folds.
 		"""
-		sw = System.Diagnostics.Stopwatch()
-		sw.start
-			
+		
 		parsedDoc = DefaultParsedDocument(fileName)
 		
 		reader = StringReader(content)
@@ -124,9 +197,6 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		_addFolds(_getLineInformation(reader), folds)
 		
 		parsedDoc.add(folds)
-
-		sw.stop
-		trace sw.elapsed
 		
 		return parsedDoc
 	
@@ -252,10 +322,10 @@ class Parser implements ITypeSystemParser, IFoldingParser
 			
 			commentBlockCount = 0
 			for f in folds
-				
+				/#
 				trace f.region.beginLine
 				trace f.region.endLine
-			
+				#/
 				if f.type == FoldType.Comment
 					commentBlockCount += 1
 					
@@ -301,7 +371,7 @@ class Parser implements ITypeSystemParser, IFoldingParser
 					if closer == docStringCloser
 					
 						level = _getIndentLevel(curr.line)
-						trace level
+						#trace level
 						
 						if level > 0
 							if levelStack.count == 0 or (levelStack.count > 0 and levelStack.peek < level)

@@ -1,6 +1,13 @@
 #!/bin/sh
 
 cd "$(dirname "$0")"
+
 cd refs
-cobra -test -pkg:gtk-sharp-2.0 -ref:System.Core ../../*.cobra ../../Project/*.cobra ../../TypeSystem/*.cobra
+
+cobra -test \
+-pkg:gtk-sharp-2.0 \
+-ref:System.Core \
+-ref:ICSharpCode.NRefactory \
+../../*.cobra ../../Project/*.cobra ../../TypeSystem/*.cobra
+
 rm test-*

@@ -1,0 +1,26 @@
+use MonoDevelop.Ide.Gui.Content
+use MonoDevelop.Ide.CodeCompletion
+
+namespace MonoDevelop.CobraBinding.Completion
+
+class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
+	
+	def keyPress(key as Gdk.Key, c as char, modifier as Gdk.ModifierType) as bool is override
+		"""
+		Return true if the key press should be processed by the editor.
+		"""
+		/#
+		trace key
+		trace c
+		trace modifier
+		#/
+		return base.keyPress(key, c, modifier)
+		
+	def handleCodeCompletion(context as CodeCompletionContext?, completionChar as char,
+							triggerWordLength as inout int) as ICompletionDataList? is override
+		/#
+		trace context
+		trace completionChar
+		trace triggerWordLength
+		#/
+		return nil
