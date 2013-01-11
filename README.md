@@ -10,21 +10,28 @@ It currently supports the following features:
 
 * Syntax Highlighting
 
+* Underlining Syntax Errors
+
+* Folding Regions
+
 * Multi-file Projects
 
 * Compilation and Execution
 
-* Debugging
+* Interactive Debugging
+
+* Limited Code Completion
 
 
 Compiling and Installing
 ========================
-This addin is primarily developed on Ubuntu 12.04 LTS using MonoDevelop 3.0 
-from this PPA: 
+This addin is primarily developed on Ubuntu 12.10. If you are still using 
+MonoDevelop 2.8 on Ubuntu 12.04 LTS, you can upgrade to MonoDevelop 3.0 
+with this PPA: 
 
 https://launchpad.net/~keks9n/+archive/monodevelop-latest
 
-However, it will work on OS X using Mono or on Windows using either the .NET 
+The addin will also work on OS X using Mono or on Windows using either the .NET 
 Framework or Mono. An installation program is provided for convenience. Just 
 execute...
 
@@ -32,7 +39,7 @@ execute...
 
 ...to compile and execute the installation program.
 
-On Windows 7 64-bit with a 32-bit installation of MonoDevelop, you'll need 
+On Windows 64-bit with a 32-bit installation of MonoDevelop, you'll need 
 to make sure you've installed Cobra using the '-x86' installer option first.  
 See below for more details.
 
@@ -42,9 +49,9 @@ Requirements
 
 * MonoDevelop 3.0
 
-* Cobra 0.9
+* Cobra svn:2870 post(0.9.3)
 
-Additional Requirements for Windows 7 64-bit
+Additional Requirements for Windows 64-bit
 --------------------------------------------
 Just skip this whole section if you are not running 64-bit Windows.
 
@@ -63,9 +70,10 @@ Cobra.  If you have already installed Cobra, you'll need to reinstall it.
 Make sure to run these commands from the Visual Studio or Windows SDK Command 
 Prompt with the correct privileges (i.e. 'Run as Administrator').
 
-First, remove Cobra.Core from the GAC:
+First, remove Cobra.Core and Cobra.Compiler from the GAC:
 
     gacutil /u Cobra.Core
+    gacutil /u Cobra.Compiler
 
 Next, set your system to use the 32-bit CLR by executing this command:
 
@@ -140,8 +148,6 @@ Try one of these tasks...
 
 * Create syntax highlighting color schemes that match those on the Cobra website
 
-* Implement a Folding Parser to fold code blocks such as tests, loops, classes, etc.
-
 * Add support for MSBuild Items
 
 
@@ -149,13 +155,19 @@ Larger Todo Tasks
 -----------------
 These will require a bit more effort...
 
-* Implement the Type System Parser
-
-* Implement the Code Completion extension
-
 * Implement a Code Formatter for smarter indentation
 
 * Implement an Ambience class for tool tips and document outline support
+
+
+Cobra Forums Discussion
+-----------------------
+This is a link to a post on the Cobra Forums discussing how the addin has been 
+implemented so far and what work remains with an emphasis on adding support 
+for automatic code-completion.
+
+http://cobra-language.com/forums/viewtopic.php?f=4&t=1047 
+
 
 Relevant Documentation
 ----------------------

@@ -1,0 +1,223 @@
+use Cobra.Compiler
+
+use ICSharpCode.NRefactory.TypeSystem
+
+namespace MonoDevelop.CobraBinding
+
+class CompilerManager
+	"""
+	This class provides serial access to the Cobra compiler. If multiple
+	threads attempt to invoke conflicting methods, the thread will be
+	blocked until the compiler is available.  This class utilizes a single
+	lock to avoid deadlocks for conflicting resources.
+	"""
+	test
+		cm1 = CompilerManager.instance
+		cm2 = CompilerManager.instance
+		assert cm1 is cm2
+	
+	shared
+		var _instance as CompilerManager? = nil
+	
+		get instance as CompilerManager
+			if _instance == nil
+				_instance = CompilerManager()
+			return _instance to !
+			
+		# only the thread holding the conch can use the compiler
+		var _theConch = Object()
+
+	# Callers have to use CompilerManager.instance instead
+	cue init is protected
+		base.init
+	
+	
+	get __compiler as Compiler
+		"""
+		Returns a fresh instance of the compiler.
+		
+		Should only be called if we have _theConch.
+		"""
+		compiler = Compiler(0) # verbosity = 0
+		
+		options = OptionValues()
+		options.add("compile", true)
+		options.add("back-end", "clr")
+		options.add("turbo", true)
+		options.add("number", "decimal")
+		
+		compiler.options = options
+		compiler.initBackEnd
+		
+		# Set some shared information which gets reset everytime we instantiate a compiler.
+		Node.setCompiler(compiler)
+		Node.typeProvider = compiler
+		
+		return compiler
+		
+		
+	def __getParser(c as Compiler) as CobraParser
+		"""
+		Returns a fresh instance of the Cobra parser.
+		"""
+		parser = CobraParser()
+		parser.typeProvider = c
+		parser.warningRecorder = c
+		parser.errorRecorder = c
+		parser.globalNS = c.globalNS
+		parser.backEnd = c.backEnd
+		
+		return parser
+	
+	
+	def parseAndBind(sourceMap as Dictionary<of String, String>, refs as List<of String>) as List<of dynamic>
+		"""
+		Simulates the various phases of the Cobra compiler.
+		
+		The phases are not instantiated directly as there is no way to provide
+		raw source code to the compiler as Strings.
+		
+		The sourceMap is a dictionary whose values are source file contents keyed
+		by filename.
+		
+		Returns a mixed list of Cobra modules and SourceExceptions.
+		It's up to the caller to determine the type of objects in the list.
+		
+		TODO: Split out the psuedo-phases into functions
+		"""
+		results = List<of dynamic>()
+		
+		if sourceMap.count == 0
+			# nothing to do
+			return results
+		
+		lock _theConch
+			compiler = __compiler
+			compiler.options['reference'] = refs
+			
+			# BindRunTimeLibraryPhase
+			compiler.addRunTimeRef(compiler.options)
+			
+			# ReadLibrariesPhase
+			compiler.readSystemTypes
+			compiler.readAssemblyTypes(compiler.options)
+			
+			# ParsePhase
+			parser = __getParser(compiler)
+			
+			# parse the source files to generate our preliminary AST
+			for fileName, sourceCode in sourceMap
+				try
+					m = parser.parseSource(fileName, sourceCode)
+					compiler.modules.add(m)
+					
+				catch ex as SourceException
+					results.add(ex)
+			
+			if compiler.errors.count == 0
+				# BindUsePhase
+				i = 0
+				while i < compiler.modules.count  # new modules can be added, say by the UseDirective
+					compiler.curModule = compiler.modules[i]
+					try
+						compiler.curModule.bindUse
+					catch ex as SourceException
+						compiler.recordError(ex)
+					i += 1
+			
+			if compiler.errors.count == 0
+				# BindInheritancePhase
+				for basicType in compiler.basicTypes
+					basicType.bindInh
+					compiler.objectType.bindInh
+					compiler.stringType.bindInh
+					compiler.dynamicType.bindInh
+					compiler.passThroughType.bindInh
+					compiler.voidType.bindInh
+					for mod in compiler.modules.clone
+						compiler.curModule = mod
+						try
+							mod.bindInh
+						catch ex as SourceException
+							compiler.recordError(ex)
+			
+			if compiler.errors.count == 0
+				# BindInterfacePhase
+				compiler.fixMemberSigs
+				for basicType in compiler.basicTypes
+					basicType.bindInt
+				compiler.objectType.bindInt
+				compiler.stringType.bindInt
+				compiler.dynamicType.bindInt
+				compiler.passThroughType.bindInt
+				compiler.voidType.bindInt
+				for mod in compiler.modules.clone
+					compiler.curModule = mod
+					try
+						mod.bindInt
+					catch ex as SourceException
+						compiler.recordError(ex)
+			
+			if compiler.errors.count == 0
+				# ComputeMatchingBaseMembersPhase
+				for mod in compiler.modules
+					compiler.curModule = mod
+					try
+						mod.computeMatchingBaseMembers
+					catch ex as SourceException
+						compiler.recordError(ex)
+			
+			if compiler.errors.count == 0
+				# BindImplementationPhase
+				for mod in compiler.modules.clone
+					compiler.curModule = mod
+					try
+						mod.bindImp
+					catch ex as SourceException
+						compiler.recordError(ex)
+			
+
+			for module in compiler.modules
+				results.add(module)
+			
+		return results
+
+	def parse(fileName as String, source as String) as dynamic
+		"""
+		Invokes the Cobra parser on the given source code and returns
+		the resulting CobraModule.  If a parser error occurs, this
+		method returns a ParserException.  It's up to the caller
+		to determine the type of the returned object.
+		"""
+		test successfulParse
+			cm = CompilerManager.instance
+			
+			fileName = "hello.cobra"
+			source = "class Hello\n\tdef main\n\t\tprint 'Hello, World!'\n"
+			
+			module = cm.parse(fileName, source)
+			
+			assert module inherits CobraModule
+			d = module.topNameSpace.declsInOrder[0]
+			assert d inherits Class
+			assert d.idToken.text == "Hello"
+		test parserError
+			cm = CompilerManager.instance
+			
+			fileName = "error.cobra"
+			source = "class Hello\n\tdef main\n"
+			
+			err = cm.parse(fileName, source)
+			
+			assert err inherits ParserException
+			assert err.lineNum == 2
+			assert err.colNum == 10
+			assert err.message == 'Missing method body for "main".'
+		body
+			lock _theConch
+				compiler = __compiler
+				parser = __getParser(compiler)
+				try
+					return parser.parseSource(fileName, source)
+				catch ex as ParserException
+					return ex

@@ -1,3 +1,5 @@
+use System.Security.Cryptography
+
 use Cobra.Compiler
 
 use MonoDevelop.Ide.TypeSystem
@@ -6,6 +8,8 @@ use MonoDevelop.Projects
 
 use ICSharpCode.NRefactory
 use ICSharpCode.NRefactory.TypeSystem
+
+use MonoDevelop.CobraBinding
 
 namespace MonoDevelop.CobraBinding.TypeSystem
 
@@ -22,165 +26,190 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		
 	var _tabsToSpaces = false
 	var _indentToken = "\t"
+	var _md5Computer = MD5.create
+
+	# these dictionaries are keyed by filename
+	shared
+		var _md5s = Dictionary<of String, String>()
+		var _moduleCache = Dictionary<of String, CobraModule>()
+		var _errorCache = Dictionary<of String, List<of dynamic>>()
+
+
+	def _getCachedModule(fileName as String, md5s as Dictionary<of String, String>) as CobraModule?
+		"""
+		Returns the CobraModule with the given fileName from the cache or nil
+		if the module is not in the cache.
+		
+		IMPORTANT! Do not include tests in compilation otherwise calls to this
+		method will clear the cache.
+		"""
+		test miss
+			p = Parser()
+			p._clearCache
+			md5s = Dictionary<of String, String>()
+			assert p._getCachedModule('test.cobra', md5s) == nil
+
+			md5s['test.cobra'] = p._getMd5Hash('hello')
+			assert p._getCachedModule('test.cobra', md5s) == nil
+
+		test hit
+			p = Parser()
+			p._clearCache
+			hash = p._getMd5Hash('hello')
+			Parser._md5s['test.cobra'] = hash
+			t = Token('test.cobra', 1, 1, 1, 'hello', 'hello', nil)
+			ns = NameSpace(t, 'TestingNameSpace')
+			Parser._moduleCache['test.cobra'] = CobraModule('test.cobra', 0, "testing", ns)
+
+			md5s = Dictionary<of String, String>()
+			md5s['test.cobra'] = hash
+
+			module = p._getCachedModule('test.cobra', md5s)
+			assert module <> nil
+			assert module is Parser._moduleCache['test.cobra']
+
+		body
+			for key, hash in md5s
+				if not _md5s.containsKey(key) or _md5s[key] <> hash
+					# one or more of the source files has changed
+					return nil
+
+			if not _moduleCache.containsKey(fileName)
+				return nil
+
+			return _moduleCache[fileName]
+		
+
+	def _getMd5Hash(fileContents as String) as String
+		"""
+		Returns String representation of the  MD5 hash code for the given
+		input string.
+
+		See http://msdn.microsoft.com/en-us/library/system.security.cryptography.md5.aspx
+		"""
+		test
+			input = "class MD5Test"
+			p = Parser()
+			assert p._getMd5Hash(input) == "d8b8c1c757769993506767adab256d57"
+		body
+			hash = _md5Computer.computeHash(Encoding.utf8.getBytes(fileContents))
+
+			sb = StringBuilder()
+			for byte in hash
+				sb.append(byte.toString("x2"))
+
+			return sb.toString
+
 	
-	def parse(storeAst as bool, fileName as String, content as TextReader, project as Project?) as ParsedDocument
+	def _clearCache
+		_moduleCache.clear
+		_md5s.clear
+		_errorCache.clear
+	
+	
+	def parse(storeAst as bool, fileName as String, content as TextReader,
+				project as MonoDevelop.Projects.Project?) as ParsedDocument
 		"""
 		implements ITypeSystemParser.parse
 		
 		Generates folds and parses the specified file using the Cobra Parser.
 		Stores the resultant AST in the ParsedDocument when storeAst is true.
 		"""
-		/#
-		#TODO: Figure out how to get the 'tabs to spaces' and other policies'
-		if project is not nil
-			project = project to DotNetProject
-			@help project.policies
-			_tabsToSpaces = project.policies.get<of TextStylePolicy>.tabsToSpaces
-			trace _tabsToSpaces
-			trace project.parentSolution.policies.get<of TextStylePolicy>.tabsToSpaces
-			trace project.policies.directHas<of TextStylePolicy>
-		#/
-		
-		trace fileName
-		
-		# read the file content
-		source = content.readToEnd
-		
-		# invoke Cobra Parser and visit AST
-		parser = CobraParser()
-		
-		# the parser needs a valid compiler and backend
-		compiler = Compiler(0) # verbosity = 0
-		
-		# TODO: Figure out why/when I need to do this
-		Node.setCompiler(compiler)
-		Node.typeProvider = compiler
-		
-		options = OptionValues()
-		# TODO: Figure out what options are really necessary
-		options.add("compile", true)
-		options.add("back-end", "clr")
-		options.add("turbo", true)
-		options.add("number", "decimal")
-		
-		compiler.options = options
-		compiler.initBackEnd
-		backEnd = compiler.backEnd
-		
-		# TODO: review previous parsing results (if any)
-		parsedFileCount = 0
-		prevModule as CobraModule? = nil
-		
-		# Add project references
-		compiler.addRunTimeRef(options)
-		compiler.readSystemTypes
-		
-		if project <> nil
-			dotNetProj = project to DotNetProject
-		
-			for projRef in dotNetProj.references
-				for refFileName in projRef.getReferencedFileNames(ConfigurationSelector.default)
-					errMsg = compiler.loadReference(refFileName, false)
-					if errMsg <> nil
-						trace errMsg #TODO: pass this on to MonoDevelop
-		
-		# initialize the parser
-		parser.typeProvider = compiler
-		parser.warningRecorder = compiler
-		parser.errorRecorder = compiler
-		parser.globalNS = compiler.globalNS
-		parser.backEnd = compiler.backEnd
-		
-		# parse the code
 		module as CobraModule? = nil
-		try
-			module = parser.parseSource(fileName, source)
-			compiler.modules.add(module)
+		visitor as MonoDevelop.CobraBinding.TypeSystem.Visitor? = nil
+		
+		source = content.readToEnd
+		if source == nil, source = ""
+
+		md5s = Dictionary<of String, String>()
+		md5s[fileName] = _getMd5Hash(source to !)
+
+		sourceMap = Dictionary<of String, String>()
+		sourceMap[fileName] = source to !
+		
+		refs = List<of String>()
+
+		if project <> nil
+			proj = project to DotNetProject #TODO to CobraProject
+
+			# we need to include the paths to any referenced assemblies
+			refs.addRange(proj.getReferencedAssemblies(ConfigurationSelector.default))
 			
-			for parserRef in parser.references #TODO: We don't have an arg parser so this loop will never be entered I believe
-				compiler.loadReference(backEnd.fixLibExtension(parserRef), false)
-			
-		catch ex as Exception
-			compiler.errors.add(SourceException(ex.message))
+			# to generate a full AST, we need all the Cobra source files in this project
+			for projFile in proj.files
+				
+				path = projFile.filePath.toString
+				
+				if path <> fileName
+					if path.endsWith(CobraLanguageBinding.sourceFileExtension)
+						if projFile.buildAction == BuildAction.compile
+							
+							reader = StreamReader(path)
+							otherSource = reader.readToEnd
+							if otherSource == nil, otherSource = ""
+							md5s[path] = _getMd5Hash(otherSource to !)
+							sourceMap[path] = otherSource to !
+
+		compilerResults = List<of dynamic>(proj.files.count)
+		
+		lock _moduleCache # seems kind of brittle to lock directly on the dictionary but...meh
+			module = _getCachedModule(fileName, md5s)
+			if module <> nil
+				#cache hit
+				trace "cache hit for [fileName]"
+				if _errorCache.containsKey(module.fileName)
+					compilerResults.addRange(_errorCache[module.fileName])
+				
+			else
+				# cache miss
+				trace "cache miss for [fileName]"
+				_clearCache
+
+				# parse the source files and bind the AST nodes to their types
+				compilerResults.addRange(CompilerManager.instance.parseAndBind(sourceMap, refs))
+				
+				for entry in compilerResults
+					if entry inherits CobraModule
+						# cache this module for next time
+						_moduleCache[entry.fileName] = entry
+						_md5s[entry.fileName] = md5s[entry.fileName]
+
+						if entry.fileName == fileName
+							# this was the requested module
+							module = entry
+					else
+						# this entry is an error
+						if not _errorCache.containsKey(entry.fileName)
+							_errorCache[entry.fileName] = List<of dynamic>()
+						else
+							_errorCache[entry.fileName].add(entry)
+
+		if module <> nil
+			# create type and region maps
+			visitor = MonoDevelop.CobraBinding.TypeSystem.Visitor()
+			visitor.visit(module)
 		
 		# add folds
-		parsedDoc = .parse(fileName, source) to DefaultParsedDocument #TODO? to ParsedCobraDocument?
-		
-		# add parsing errors
-		errors = List<of Error>()
-		
-		for e in compiler.errors		
-			errors.add(Error( _
-				ErrorType.Error, e.message, e.lineNum, e.colNum))
-				
-		for w in compiler.warnings
-			errors.add(Error( _
-				ErrorType.Warning, w.message, w.lineNum, w.colNum))
-			
-		parsedDoc.add(errors)
-		
-		
-		
-		
-		trace errors.count
-		if errors.count == 0
-			try
-				# bind use
-				for mod in compiler.modules.clone
-					compiler.curModule = mod # TODO: is this necessary?
-					mod.bindUse
-				
-				# bind inheritance
-				for basicType in compiler.basicTypes
-					basicType.bindInh
-				compiler.objectType.bindInh
-				compiler.stringType.bindInh
-				compiler.dynamicType.bindInh
-				compiler.passThroughType.bindInh
-				compiler.voidType.bindInh
-		
-				for mod in compiler.modules.clone
-					compiler.curModule = mod
-					mod.bindInh
-					
-				# bind interface
-				compiler.fixMemberSigs
-				for basicType in compiler.basicTypes
-					basicType.bindInt
-				compiler.objectType.bindInt
-				compiler.stringType.bindInt
-				compiler.dynamicType.bindInt
-				compiler.passThroughType.bindInt
-				compiler.voidType.bindInt
-				
-				for mod in compiler.modules.clone
-					compiler.curModule = mod
-					mod.bindInh
-					
-				# compute matching base members phase
-				for mod in compiler.modules
-					compiler.curModule = mod
-					mod.computeMatchingBaseMembers
-				
-				# bind implementation
-				BindImplementationPhase(compiler).innerRun
-				
-			catch sourceEx as SourceException
-				trace sourceEx.message
-				parsedDoc.add(Error(ErrorType.Error, sourceEx.message))
-				
-		
-				
-		
-		#doc = MonoDevelop.Ide.IdeApp.workbench.getDocument(fileName)
-		if storeAst
-			parsedDoc.ast = module #TODO: Use some kind of cached AST if there were parsing errors
+		parsedDoc = .parse(fileName, source) to ParsedCobraDocument
 
-		/# TODO? Add comment regions?
-		comments = List<of Tag>()
-		parsedDoc.add(comments)
-		#/
+		if visitor <> nil
+			parsedDoc.regionMap = visitor.regionMap
 		
+		# underline errors
+		for err in compilerResults
+			if not err inherits Module
+				if err inherits ParserException and err.fileName == fileName
+					parsedDoc.add(Error(ErrorType.Error, err.message, err.lineNum, err.colNum - 1))
+					trace err.message
+				else if err inherits SourceException and err.fileName == fileName
+					parsedDoc.add(Error(ErrorType.Error, err.message, err.lineNum, err.colNum))
+					trace err.message + " " + err.lineNum.toString + " " + err.colNum.toString
+				else
+					trace err.toString
+		
+		if storeAst
+			parsedDoc.ast = module
+
 		return parsedDoc
 		
 	def parse(fileName as String, content as String) as ParsedDocument
@@ -189,20 +218,18 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		
 		Parse the specified file to generate folds.
 		"""
-		
-		parsedDoc = DefaultParsedDocument(fileName)
+		parsedDoc = ParsedCobraDocument(fileName, content)
 		
 		reader = StringReader(content)
 		folds = List<of FoldingRegion>()
 		_addFolds(_getLineInformation(reader), folds)
 		
 		parsedDoc.add(folds)
-		
+
 		return parsedDoc
 	
 	
 	def _getLineInformation(reader as StringReader) as List<of LineInformation>
-		
 		lines = List<of String>(.TYPICAL_LINE_COUNT)
 		
 		line = reader.readLine
@@ -225,7 +252,80 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		ensure
 			result.count == lines.count
 		test
-			pass
+			source = List<of String>()
+			source.add("use Foo.Namespace") # line 0
+			source.add("")
+			source.add("namespace Bar.Namespace")
+			source.add("\tclass SomeClass")
+			source.add("\t\t'''")
+			source.add("\t\tDocstring text") # line 5
+			source.add("\t\t'''")
+			source.add("")
+			source.add("\t\tdef aMethod")
+			source.add("/#")
+			source.add("\ta comment") # line 10
+			source.add("\t\t#/")
+			source.add("\t\t\t")
+			source.add("\t\t\tprint 'hello world!'")
+			source.add("")
+			source.add("")
+			
+			parser = Parser()
+			infoList = parser._getLineInformation(source)
+						
+			assert infoList[0].opensComment == false
+			assert infoList[0].closesComment == false
+			assert infoList[0].opensDocString == false
+			assert infoList[0].closesDocString == false
+			assert infoList[0].isBlank == false
+									
+			assert infoList[1].opensComment == false
+			assert infoList[1].closesComment == false
+			assert infoList[1].opensDocString == false
+			assert infoList[1].closesDocString == false
+			assert infoList[1].isBlank == true #
+						
+			assert infoList[4].opensComment == false
+			assert infoList[4].closesComment == false
+			assert infoList[4].opensDocString == true #
+			assert infoList[4].closesDocString == false
+			assert infoList[4].isBlank == false
+						
+			assert infoList[5].opensComment == false
+			assert infoList[5].closesComment == false
+			assert infoList[5].opensDocString == false
+			assert infoList[5].closesDocString == false
+			assert infoList[5].isBlank == false
+						
+			assert infoList[6].opensComment == false
+			assert infoList[6].closesComment == false
+			assert infoList[6].opensDocString == false
+			assert infoList[6].closesDocString == true #
+			assert infoList[6].isBlank == false
+			
+			assert infoList[9].opensComment == true #
+			assert infoList[9].closesComment == false
+			assert infoList[9].opensDocString == false
+			assert infoList[9].closesDocString == false
+			assert infoList[9].isBlank == false
+			
+			assert infoList[10].opensComment == false
+			assert infoList[10].closesComment == false
+			assert infoList[10].opensDocString == false
+			assert infoList[10].closesDocString == false
+			assert infoList[10].isBlank == false
+			
+			assert infoList[11].opensComment == false
+			assert infoList[11].closesComment == true #
+			assert infoList[11].opensDocString == false
+			assert infoList[11].closesDocString == false
+			assert infoList[11].isBlank == false
+			
+			assert infoList[12].opensComment == false
+			assert infoList[12].closesComment == false
+			assert infoList[12].opensDocString == false
+			assert infoList[12].closesDocString == false
+			assert infoList[12].isBlank == true #
 		body
 			info as LineInformation? = nil
 			inComment = false
@@ -287,10 +387,6 @@ class Parser implements ITypeSystemParser, IFoldingParser
 			
 			commentBlockCount = 0
 			for f in folds
-				/#
-				trace f.region.beginLine
-				trace f.region.endLine
-				#/
 				if f.type == FoldType.Comment
 					commentBlockCount += 1
 				else
@@ -322,10 +418,6 @@ class Parser implements ITypeSystemParser, IFoldingParser
 			
 			commentBlockCount = 0
 			for f in folds
-				/#
-				trace f.region.beginLine
-				trace f.region.endLine
-				#/
 				if f.type == FoldType.Comment
 					commentBlockCount += 1
 					
@@ -371,8 +463,6 @@ class Parser implements ITypeSystemParser, IFoldingParser
 					if closer == docStringCloser
 					
 						level = _getIndentLevel(curr.line)
-						#trace level
-						
 						if level > 0
 							if levelStack.count == 0 or (levelStack.count > 0 and levelStack.peek < level)
 								/# We need to make sure the doc string

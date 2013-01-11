@@ -99,7 +99,9 @@
     <Compile Include="TypeSystem\Parser.cobra" />
     <Compile Include="TypeSystem\LineInformation.cobra" />
     <Compile Include="Completion\CobraCompletionTextEditorExtension.cobra" />
-    <Compile Include="TypeSystem\CobraAstVisitor.cobra" />
+    <Compile Include="TypeSystem\Visitor.cobra" />
+    <Compile Include="TypeSystem\ParsedCobraDocument.cobra" />
+    <Compile Include="CompilerManager.cobra" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Gui\Gui.csproj">
@@ -117,6 +119,14 @@
       <Package>monodevelop</Package>
     </Reference>
     <Reference Include="MonoDevelop.Core, Version=2.6.0.0, Culture=neutral">
+      <Private>False</Private>
+      <Package>monodevelop</Package>
+    </Reference>
+    <Reference Include="ICSharpCode.NRefactory, Version=0.0.0.0, Culture=neutral, PublicKeyToken=efe927acf176eea2">
+      <Private>False</Private>
+      <Package>monodevelop</Package>
+    </Reference>
+    <Reference Include="Mono.TextEditor, Version=1.0.0.0, Culture=neutral">
       <Private>False</Private>
       <Package>monodevelop</Package>
     </Reference>
