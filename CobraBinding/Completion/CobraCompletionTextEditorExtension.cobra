@@ -1,3 +1,5 @@
+use System.Text.RegularExpressions
+
 use Cobra.Compiler
 
 use MonoDevelop.CobraBinding.TypeSystem
@@ -220,26 +222,36 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 		if completionChar == c'.'
 			# member completion
 			
-			# don't include the dot in the trigger word length
-			triggerWordLength -= 1
+			# don't include the dot or anything before it in the trigger word length
+			triggerWordLength = 0
 			
-			id = _getIdFromText(preceedingText)
-			if true
+			ids = _getIdsFromText(preceedingText)
+			
+			for id in ids
+				trace id
+			
+			if ids.count == 0
 				# return fields and methods in the context of the current class
 				for region in containingRegions
-					node = nodeMap[region]
+					node = nodeMap[region]					
 					if node inherits Class
-						completionData.addRange(_getClassMemberCompletionData(node))
+						completionData.addRange(_getBoxMemberCompletionData(node))
 				return completionData
 			else
 				# return fields and methods for the corresponding node
 				try
-					node = _getNodeFromId(id)
-					if node inherits Class
-						completionData.addRange(_getClassMemberCompletionData(node))
+					node = _getNodeFromIds(ids, containingRegions, nodeMap)					
+					
+					trace node.toString
+					
+					if node inherits LocalVar
+						if node.type inherits Box
+							completionData.addRange(_getBoxMemberCompletionData(node.type to Box))					
+						
 					return completionData
-				catch
+				catch ArgumentException
 					# not a valid identifier
+					print "not a valid identifier"
 					return nil
 		
 		# return unique completion data entries
@@ -355,24 +367,95 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 		# Crap!  This function already exists in Parser.  Shouldn't be repeated here.
 		return line.length - line.trimStart.length
 
-	def _getIdFromText(text as String) as String
+	shared
+		var rexIdentifier = Regex( _
+			r'[a-zA-z0-9]*', _
+			RegexOptions.Compiled _
+		)
+
+	def _getIdsFromText(text as String) as List<of String>
 		"""
-		Given arbitrary text, returns the last identifier
-		"""
-		#TODO
-		id = text.trim
-		print id
-		return ""
+		Given arbitrary text, returns a list of trailing identifiers.
 		
-	def _getNodeFromId(id as String) as ISyntaxNode
+		For example, given "foo = SomeSharedClass.someProp.", then this
+		method would return ['SomeSharedClass', 'someProp'].
+		"""
+		test
+			sampleText = "foo = SomeSharedClass.someProp."
+			completionExtension = CobraCompletionTextEditorExtension()
+			ids = completionExtension._getIdsFromText(sampleText)
+			assert ids.count == 2
+			assert ids[0] == "SomeSharedClass"
+			assert ids[1] == "someProp"
+		body
+			ids = List<of String>()			
+			text = text.trim
+			
+			# split the text by whitespace
+			pieces = text.split
+			lastPiece = pieces[pieces.length - 1]
+			
+			match = CobraCompletionTextEditorExtension.rexIdentifier.match(lastPiece)
+			while match.success
+				if match.value.length > 0
+					ids.add(match.value)
+				match = match.nextMatch to !
+			
+			return ids
+		
+	def _getNodeFromIds(ids as List<of String>,
+						containingRegions as List<of DomRegion>,
+						nodeMap as Dictionary<of DomRegion, ISyntaxNode>) as ISyntaxNode
 		"""
 		Given a valid identifier, returns the corresponding syntax node in the AST.
 		
 		Throws an ArgumentException if no node is found.
 		"""
-		#TODO
-		throw ArgumentException()
-		
+		require
+			ids.count > 0
+			containingRegions.count > 0
+			all for region in containingRegions get nodeMap.containsKey(region)
+
+		test singleIdentifier
+			# setup
+			ids = ['Object']
+			regions = [DomRegion(1,1)]
+			bogusNode = Class('Object', List<of Cobra.Compiler.IType>())
+			nodeMap = Dictionary<of DomRegion, ISyntaxNode>()
+			nodeMap[regions[0]] = bogusNode
+
+			completionExtension = CobraCompletionTextEditorExtension()
+			assert completionExtension._getNodeFromIds(ids, regions, nodeMap) is bogusNode
+
+		body
+			#TODO: do this right
+			parent as ISyntaxNode? = nil
+
+			for region in containingRegions
+
+				node = nodeMap[region]
+				if node inherits NamedNode
+					trace node.name
+					trace ids[0]
+					if node.name == ids[0]
+						parent = node
+						break
+					else if node inherits AbstractMethod
+						for v in node.locals
+							if v.name == ids[0]
+								return v
+
+			if ids.count == 1
+				if parent <> nil
+					return parent
+				else
+					throw ArgumentException()
+
+			# TODO: follow the chain
+			for i in 1:ids.count
+				pass
+			throw ArgumentException()
+				
 
 	def _getTopLevelCompletionData(preceedingText as String, currText as String) as ICompletionDataList
 		"""
@@ -450,7 +533,7 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 				for kw in .keywordsInBox
 					dataList.add(kw, .iconKeyword)
 				
-				dataList.addRange(_getClassMemberCompletionData(nodeMap[region] to Class))
+				dataList.addRange(_getBoxMemberCompletionData(nodeMap[region] to Class))
 				
 			else if firstRegionLine.startsWith("def ") or firstRegionLine.startsWith("get ") or firstRegionLine.startsWith("set ")
 				# being inside a method gives us access to all its local variables and more Cobra keywords
@@ -630,26 +713,21 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 		
 		return decls
 		
-	def _getClassMemberCompletionData(c as Class) as ICompletionDataList
+	def _getBoxMemberCompletionData(b as Box) as ICompletionDataList
 		"""
-		Given a class node, return the members associated with it.
+		Given a box node, return the unique members associated with it.
 		"""
+		seen = HashSet<of String>()
+		members = CompletionDataList()
 		
-		decls = CompletionDataList()
+		for m in b.allMembers
+			if seen.add(m.name)
+				if m inherits AbstractMethod				
+					members.add(m.name, .iconMethod)
+				else
+					members.add(m.name, .iconField)
 		
-		for d in c.declsInOrder
-			if d inherits AbstractMethod
-				decls.add(d.name, .iconMethod)
-			else
-				decls.add(d.name, .iconField)
-				
-		baseClass = c.baseClass
-		while baseClass <> nil
-			baseDecls = _getClassMemberCompletionData(baseClass to !)
-			decls.addRange(baseDecls to CompletionDataList)
-			baseClass = baseClass.baseClass
-		
-		return decls
+		return members
 		
 	def _getMethodVarCompletionData(m as AbstractMethod) as ICompletionDataList
 		"""
@@ -661,13 +739,14 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 		for v in m.locals
 			vars.add(v.name, .iconField)
 		
-		vars.addRange(_getVarsFromStatements(m.statements))
+		# vars.addRange(_getVarsFromStatements(m.statements))
 		
 		for p in m.params
 			vars.add(p.name, .iconField)
 		
 		return vars
-		
+
+	/#	
 	def _getVarsFromForLoop(forLoop as ForStmt) as ICompletionDataList
 		"""
 		Returns the variables declared in the given for loop syntax node.
@@ -743,3 +822,4 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 
 		# the assignment is probably not declaring a variable (e.g. foo.bar = 1)
 		return nil
+	#/

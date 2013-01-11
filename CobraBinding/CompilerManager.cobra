@@ -92,7 +92,7 @@ class CompilerManager
 			return results
 		
 		lock _theConch
-			compiler = __compiler
+			compiler = __compiler					
 			compiler.options['reference'] = refs
 			
 			# BindRunTimeLibraryPhase
@@ -175,6 +175,8 @@ class CompilerManager
 						mod.bindImp
 					catch ex as SourceException
 						compiler.recordError(ex)
+					catch wtf as Exception
+						print wtf.toString
 			
 
 			for module in compiler.modules

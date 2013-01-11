@@ -10,16 +10,16 @@ class Visitor inherits Cobra.Core.Visitor
 	given CobraModule.
 
 	The region of each declaration is added to a dictionary keyed by
-	the declaration itself (as an ISyntaxNode).
+	the declaration itself (as an ISyntaxNode).	
 	"""
 
-	var _regionMap as Dictionary<of ISyntaxNode, DomRegion>
+	var _regionMap as Dictionary<of ISyntaxNode, DomRegion>	
 
 	get regionMap from var
 
 	cue init
 		base.init
-		_regionMap = Dictionary<of ISyntaxNode, DomRegion>()
+		_regionMap = Dictionary<of ISyntaxNode, DomRegion>()		
 
 	def _addRegion(node as ISyntaxNode)
 		bl = node.token.lineNum
@@ -39,39 +39,23 @@ class Visitor inherits Cobra.Core.Visitor
 		This is the generic "catch-all" method for nodes that don't
 		provide meaningul type information.
 		"""
-		pass
-		/#
-		if n implements INamedNode
-			print "***[n.name] : [n.getType.toString]"
-		#/
+		pass		
 		
 	def visit(m as CobraModule)
 		"""
 		This is the externally called "top-level" method.
-		"""
-		#print m.fileName
+		"""		
 		.visit(m.topNameSpace)
 		
-	def visit(ns as NameSpace)
-		#print ns.name
+	def visit(ns as NameSpace)		
 		_addRegion(ns)
 		.dispatch(ns.declsInOrder)
 		
-	def visit(c as Class)
-		/#
-		print "\t[c.name] ([c.qualifiedName])"
-		baseClass = c.baseClass
-		while baseClass <> nil
-			print "inherits from [baseClass.name]"
-			baseClass = baseClass.baseClass
-		#/
+	def visit(c as Class)		
 		_addRegion(c)
-		.dispatch(c.declsInOrder)
-		trace c.name
-		trace _regionMap[c].toString
+		.dispatch(c.declsInOrder)		
 
-	def visit(i as Interface)
-		#print "\t[i.name]"
+	def visit(i as Interface)		
 		_addRegion(i)
 
 	def visit(s as Struct)
@@ -87,17 +71,16 @@ class Visitor inherits Cobra.Core.Visitor
 		_addRegion(m)
 		
 	def visit(m as AbstractMethod)
-		#print "\t\t[m.name] : [m.resultType.name]"
 		_addRegion(m)
 		
-	def visit(v as BoxVar)
-		#print "\t\t[v.name] : [v.type.name]"
+	def visit(v as LocalVar)
 		pass
 		
-	def visit(c as BoxConst)
-		#print "\t\t[c.name] : [c.type.name]"
+	def visit(v as BoxVar)		
+		pass
+		
+	def visit(c as BoxConst)		
 		pass
 
-	def visit(p as Property)
-		#print "\t\t[p.name] : [p.returnType.name]"
+	def visit(p as Property)		
 		pass

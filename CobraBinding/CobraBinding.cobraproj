@@ -130,5 +130,8 @@
       <Private>False</Private>
       <Package>monodevelop</Package>
     </Reference>
+    <Reference Include="Cobra.Compiler">
+      <HintPath>bin\Debug\Cobra.Compiler.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>

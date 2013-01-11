@@ -155,18 +155,22 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		lock _moduleCache # seems kind of brittle to lock directly on the dictionary but...meh
 			module = _getCachedModule(fileName, md5s)
 			if module <> nil
-				#cache hit
-				trace "cache hit for [fileName]"
+				# cache hit
+				#trace "cache hit for [fileName]"
 				if _errorCache.containsKey(module.fileName)
 					compilerResults.addRange(_errorCache[module.fileName])
 				
 			else
 				# cache miss
-				trace "cache miss for [fileName]"
+				#trace "cache miss for [fileName]"
 				_clearCache
 
 				# parse the source files and bind the AST nodes to their types
-				compilerResults.addRange(CompilerManager.instance.parseAndBind(sourceMap, refs))
+				try
+					compilerResults.addRange(CompilerManager.instance.parseAndBind(sourceMap, refs))
+				catch ex as Exception
+					# TODO: Figure out what to do in this case
+					trace ex.toString
 				
 				for entry in compilerResults
 					if entry inherits CobraModule
