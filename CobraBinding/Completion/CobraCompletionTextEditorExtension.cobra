@@ -227,8 +227,10 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 			
 			ids = _getIdsFromText(preceedingText)
 			
+			/#
 			for id in ids
 				trace id
+			#/
 			
 			if ids.count == 0
 				# return fields and methods in the context of the current class
@@ -242,7 +244,7 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 				try
 					node = _getNodeFromIds(ids, containingRegions, nodeMap)					
 					
-					trace node.toString
+					#trace node.toString
 					
 					if node inherits LocalVar
 						if node.type inherits Box
@@ -251,7 +253,7 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 					return completionData
 				catch ArgumentException
 					# not a valid identifier
-					print "not a valid identifier"
+					#print "not a valid identifier"
 					return nil
 		
 		# return unique completion data entries
@@ -435,8 +437,8 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 
 				node = nodeMap[region]
 				if node inherits NamedNode
-					trace node.name
-					trace ids[0]
+					#trace node.name
+					#trace ids[0]
 					if node.name == ids[0]
 						parent = node
 						break
