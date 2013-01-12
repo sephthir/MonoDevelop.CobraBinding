@@ -85,26 +85,39 @@ class CompilerManager
 		
 		TODO: Split out the psuedo-phases into functions
 		"""
+		sw = System.Diagnostics.Stopwatch()
 		results = List<of dynamic>()
 		
 		if sourceMap.count == 0
 			# nothing to do
 			return results
 		
+		sw.start
 		lock _theConch
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to get lock"
+			sw.restart
 			compiler = __compiler					
 			compiler.options['reference'] = refs
-			
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to instantiate compiler"
+			sw.restart
 			# BindRunTimeLibraryPhase
 			compiler.addRunTimeRef(compiler.options)
-			
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to bind run time libraries"
+			sw.restart
 			# ReadLibrariesPhase
 			compiler.readSystemTypes
 			compiler.readAssemblyTypes(compiler.options)
-			
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to read libraries"
 			# ParsePhase
+			sw.restart
 			parser = __getParser(compiler)
-			
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to instantiate parser"
+			sw.restart
 			# parse the source files to generate our preliminary AST
 			for fileName, sourceCode in sourceMap
 				try
@@ -113,7 +126,9 @@ class CompilerManager
 					
 				catch ex as SourceException
 					results.add(ex)
-			
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to parse all files"
+			sw.restart
 			if compiler.errors.count == 0
 				# BindUsePhase
 				i = 0
@@ -124,7 +139,9 @@ class CompilerManager
 					catch ex as SourceException
 						compiler.recordError(ex)
 					i += 1
-			
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to bind use"
+			sw.restart
 			if compiler.errors.count == 0
 				# BindInheritancePhase
 				for basicType in compiler.basicTypes
@@ -140,7 +157,9 @@ class CompilerManager
 							mod.bindInh
 						catch ex as SourceException
 							compiler.recordError(ex)
-			
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to bind inheritance"
+			sw.restart
 			if compiler.errors.count == 0
 				# BindInterfacePhase
 				compiler.fixMemberSigs
@@ -157,7 +176,9 @@ class CompilerManager
 						mod.bindInt
 					catch ex as SourceException
 						compiler.recordError(ex)
-			
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to bind interface"
+			sw.restart
 			if compiler.errors.count == 0
 				# ComputeMatchingBaseMembersPhase
 				for mod in compiler.modules
@@ -166,7 +187,9 @@ class CompilerManager
 						mod.computeMatchingBaseMembers
 					catch ex as SourceException
 						compiler.recordError(ex)
-			
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to compute matching base members"
+			sw.restart
 			if compiler.errors.count == 0
 				# BindImplementationPhase
 				for mod in compiler.modules.clone
@@ -177,7 +200,8 @@ class CompilerManager
 						compiler.recordError(ex)
 					catch wtf as Exception
 						print wtf.toString
-			
+			sw.stop
+			trace sw.elapsedMilliseconds, "time to bind implementation"
 
 			for module in compiler.modules
 				results.add(module)
