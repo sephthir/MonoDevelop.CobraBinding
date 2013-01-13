@@ -95,28 +95,28 @@ class CompilerManager
 		sw.start
 		lock _theConch
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to get lock"
+			__printElapsedTime("time to get lock", sw)
 			sw.restart
 			compiler = __compiler					
 			compiler.options['reference'] = refs
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to instantiate compiler"
+			__printElapsedTime("time to instantiate compiler", sw)
 			sw.restart
 			# BindRunTimeLibraryPhase
 			compiler.addRunTimeRef(compiler.options)
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to bind run time libraries"
+			__printElapsedTime("time to bind run time libraries", sw)
 			sw.restart
 			# ReadLibrariesPhase
 			compiler.readSystemTypes
 			compiler.readAssemblyTypes(compiler.options)
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to read libraries"
+			__printElapsedTime("time to read libraries", sw)
 			# ParsePhase
 			sw.restart
 			parser = __getParser(compiler)
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to instantiate parser"
+			__printElapsedTime("time to instantiate parser", sw)
 			sw.restart
 			# parse the source files to generate our preliminary AST
 			for fileName, sourceCode in sourceMap
@@ -127,7 +127,7 @@ class CompilerManager
 				catch ex as SourceException
 					results.add(ex)
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to parse all files"
+			__printElapsedTime("time to parse all files", sw)
 			sw.restart
 			if compiler.errors.count == 0
 				# BindUsePhase
@@ -140,7 +140,7 @@ class CompilerManager
 						compiler.recordError(ex)
 					i += 1
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to bind use"
+			__printElapsedTime("time to bind use", sw)
 			sw.restart
 			if compiler.errors.count == 0
 				# BindInheritancePhase
@@ -158,7 +158,7 @@ class CompilerManager
 						catch ex as SourceException
 							compiler.recordError(ex)
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to bind inheritance"
+			__printElapsedTime("time to bind inheritance", sw)
 			sw.restart
 			if compiler.errors.count == 0
 				# BindInterfacePhase
@@ -177,7 +177,7 @@ class CompilerManager
 					catch ex as SourceException
 						compiler.recordError(ex)
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to bind interface"
+			__printElapsedTime("time to bind interface", sw)
 			sw.restart
 			if compiler.errors.count == 0
 				# ComputeMatchingBaseMembersPhase
@@ -188,7 +188,7 @@ class CompilerManager
 					catch ex as SourceException
 						compiler.recordError(ex)
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to compute matching base members"
+			__printElapsedTime("time to compute matching base members", sw)
 			sw.restart
 			if compiler.errors.count == 0
 				# BindImplementationPhase
@@ -201,7 +201,7 @@ class CompilerManager
 					catch wtf as Exception
 						print wtf.toString
 			sw.stop
-			trace sw.elapsedMilliseconds, "time to bind implementation"
+			__printElapsedTime("time to bind implementation", sw)
 
 			for module in compiler.modules
 				results.add(module)
@@ -247,3 +247,7 @@ class CompilerManager
 					return parser.parseSource(fileName, source)
 				catch ex as ParserException
 					return ex
+
+	def __printElapsedTime(msg as String, sw as System.Diagnostics.Stopwatch)
+		timeSpan = sw.elapsed
+		print "[msg]: [String.format('{0:0}.{1:00}', timeSpan.seconds, timeSpan.milliseconds/10)] seconds"
