@@ -153,6 +153,10 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		compilerResults = List<of dynamic>(proj.files.count)
 		
 		lock _moduleCache # seems kind of brittle to lock directly on the dictionary but...meh
+		
+			# The latest changes break this caching mechanism
+			# TODO: Fix it!					
+		
 			module = _getCachedModule(fileName, md5s)
 			if module <> nil
 				# cache hit
@@ -167,7 +171,7 @@ class Parser implements ITypeSystemParser, IFoldingParser
 
 				# parse the source files and bind the AST nodes to their types
 				try
-					compilerResults.addRange(CompilerManager.instance.parseAndBind(sourceMap, refs))
+					compilerResults.addRange(CompilerManager.instance.parseAndBind(sourceMap, refs, fileName))
 				catch ex as Exception
 					# TODO: Figure out what to do in this case
 					trace ex.toString

@@ -15,48 +15,48 @@ class CompilerManager
 		cm1 = CompilerManager.instance
 		cm2 = CompilerManager.instance
 		assert cm1 is cm2
-	
+
 	shared
 		var _instance as CompilerManager? = nil
-	
+
 		get instance as CompilerManager
 			if _instance == nil
 				_instance = CompilerManager()
 			return _instance to !
-			
+
 		# only the thread holding the conch can use the compiler
 		var _theConch = Object()
 
 	# Callers have to use CompilerManager.instance instead
 	cue init is protected
 		base.init
-	
-	
-	get __compiler as Compiler
+
+
+	def __createCompiler as Compiler
 		"""
 		Returns a fresh instance of the compiler.
-		
+
 		Should only be called if we have _theConch.
 		"""
 		compiler = Compiler(0) # verbosity = 0
-		
+
 		options = OptionValues()
 		options.add("compile", true)
 		options.add("back-end", "clr")
 		options.add("turbo", true)
 		options.add("number", "decimal")
-		
+
 		compiler.options = options
 		compiler.initBackEnd
-		
+
 		# Set some shared information which gets reset everytime we instantiate a compiler.
 		Node.setCompiler(compiler)
 		Node.typeProvider = compiler
-		
+
 		return compiler
-		
-		
-	def __getParser(c as Compiler) as CobraParser
+
+
+	def __createParser(c as Compiler) as CobraParser
 		"""
 		Returns a fresh instance of the Cobra parser.
 		"""
@@ -66,38 +66,38 @@ class CompilerManager
 		parser.errorRecorder = c
 		parser.globalNS = c.globalNS
 		parser.backEnd = c.backEnd
-		
+
 		return parser
-	
-	
-	def parseAndBind(sourceMap as Dictionary<of String, String>, refs as List<of String>) as List<of dynamic>
+
+
+	def parseAndBind(sourceMap as Dictionary<of String, String>, refs as List<of String>, fileToBind as String) as List<of dynamic>
 		"""
 		Simulates the various phases of the Cobra compiler.
-		
+
 		The phases are not instantiated directly as there is no way to provide
 		raw source code to the compiler as Strings.
-		
+
 		The sourceMap is a dictionary whose values are source file contents keyed
 		by filename.
-		
+
 		Returns a mixed list of Cobra modules and SourceExceptions.
 		It's up to the caller to determine the type of objects in the list.
-		
+
 		TODO: Split out the psuedo-phases into functions
 		"""
 		sw = System.Diagnostics.Stopwatch()
 		results = List<of dynamic>()
-		
+
 		if sourceMap.count == 0
 			# nothing to do
 			return results
-		
+
 		sw.start
 		lock _theConch
 			sw.stop
 			__printElapsedTime("time to get lock", sw)
 			sw.restart
-			compiler = __compiler					
+			compiler = __createCompiler
 			compiler.options['reference'] = refs
 			sw.stop
 			__printElapsedTime("time to instantiate compiler", sw)
@@ -114,7 +114,7 @@ class CompilerManager
 			__printElapsedTime("time to read libraries", sw)
 			# ParsePhase
 			sw.restart
-			parser = __getParser(compiler)
+			parser = __createParser(compiler)
 			sw.stop
 			__printElapsedTime("time to instantiate parser", sw)
 			sw.restart
@@ -123,7 +123,7 @@ class CompilerManager
 				try
 					m = parser.parseSource(fileName, sourceCode)
 					compiler.modules.add(m)
-					
+
 				catch ex as SourceException
 					results.add(ex)
 			sw.stop
@@ -193,19 +193,20 @@ class CompilerManager
 			if compiler.errors.count == 0
 				# BindImplementationPhase
 				for mod in compiler.modules.clone
-					compiler.curModule = mod
-					try
-						mod.bindImp
-					catch ex as SourceException
-						compiler.recordError(ex)
-					catch wtf as Exception
-						print wtf.toString
+					if mod.fileName == fileToBind
+						compiler.curModule = mod
+						try
+							mod.bindImp
+						catch ex as SourceException
+							compiler.recordError(ex)
+						catch wtf as Exception
+							print wtf.toString
 			sw.stop
 			__printElapsedTime("time to bind implementation", sw)
 
 			for module in compiler.modules
 				results.add(module)
-			
+
 		return results
 
 	def parse(fileName as String, source as String) as dynamic
@@ -217,32 +218,32 @@ class CompilerManager
 		"""
 		test successfulParse
 			cm = CompilerManager.instance
-			
+
 			fileName = "hello.cobra"
 			source = "class Hello\n\tdef main\n\t\tprint 'Hello, World!'\n"
-			
+
 			module = cm.parse(fileName, source)
-			
+
 			assert module inherits CobraModule
 			d = module.topNameSpace.declsInOrder[0]
 			assert d inherits Class
 			assert d.idToken.text == "Hello"
 		test parserError
 			cm = CompilerManager.instance
-			
+
 			fileName = "error.cobra"
 			source = "class Hello\n\tdef main\n"
-			
+
 			err = cm.parse(fileName, source)
-			
+
 			assert err inherits ParserException
 			assert err.lineNum == 2
 			assert err.colNum == 10
 			assert err.message == 'Missing method body for "main".'
 		body
 			lock _theConch
-				compiler = __compiler
-				parser = __getParser(compiler)
+				compiler = __createCompiler
+				parser = __createParser(compiler)
 				try
 					return parser.parseSource(fileName, source)
 				catch ex as ParserException

@@ -44,7 +44,7 @@ class Visitor inherits Cobra.Core.Visitor
 	def visit(m as CobraModule)
 		"""
 		This is the externally called "top-level" method.
-		"""		
+		"""
 		.visit(m.topNameSpace)
 		
 	def visit(ns as NameSpace)		

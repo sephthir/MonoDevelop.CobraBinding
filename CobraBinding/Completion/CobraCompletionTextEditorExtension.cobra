@@ -243,7 +243,6 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 				# return fields and methods for the corresponding node
 				try
 					node = _getNodeFromIds(ids, containingRegions, nodeMap)					
-					
 					#trace node.toString
 					
 					if node inherits LocalVar
@@ -721,7 +720,7 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 		"""
 		seen = HashSet<of String>()
 		members = CompletionDataList()
-		
+
 		for m in b.allMembers
 			if seen.add(m.name)
 				if m inherits AbstractMethod				
