@@ -54,6 +54,7 @@ class CobraBindingAddinInstaller
 	]
 	
 	var _filesToCompile = [
+		"Completion[__s]CobraCompletionTextEditorExtension.cobra",
 		"AssemblyInfo.cs",
 		"CobraLanguageBinding.cobra",
 		"CompilerManager.cobra",
@@ -63,7 +64,6 @@ class CobraBindingAddinInstaller
 		"TypeSystem[__s]LineInformation.cobra",
 		"TypeSystem[__s]Visitor.cobra",
 		"TypeSystem[__s]ParsedCobraDocument.cobra",
-		"Completion[__s]CobraCompletionTextEditorExtension.cobra",
 	]
 	
 	var _refs = [
