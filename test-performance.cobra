@@ -13,16 +13,20 @@ class TestPerformance
 			for file in Directory.enumerateFiles(dir, "*.cobra")
 				sourceCode = StreamReader(file).readToEnd
 				sourceMap.add(file, sourceCode)
+				if file.endsWith("CompletionTextEditorExtension.cobra")
+					fileThatCrashes = file
+				else
+					fileThatDoesntCrash = file
 		
 		refs = List<of String>()
 		for asmRef in Directory.enumerateFiles("./CobraBinding/scripts/refs")
 			refs.add(asmRef)
 		
 		# compile the files
-		for i in 10
-			print "Pass #[i+1]"
-			cm = CompilerManager.instance
-			cm.parseAndBind(sourceMap, refs)
+		cm = CompilerManager.instance
+		cm.parseAndBind(sourceMap, refs, fileThatDoesntCrash)
+		print
+		cm.parseAndBind(sourceMap, refs, fileThatCrashes)
 		
 	def _getDirectories as List<of String>
 		"""Return all directories under the current working directory"""
