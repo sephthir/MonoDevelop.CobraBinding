@@ -245,7 +245,7 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 					node = _getNodeFromIds(ids, containingRegions, nodeMap)					
 					#trace node.toString
 					
-					if node inherits LocalVar
+					if node inherits AbstractLocalVar
 						if node.type inherits Box
 							completionData.addRange(_getBoxMemberCompletionData(node.type to Box))					
 						
@@ -445,6 +445,10 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 						for v in node.locals
 							if v.name == ids[0]
 								return v
+						
+						for p in node.params
+							if p.name == ids[0]
+								return p
 
 			if ids.count == 1
 				if parent <> nil
