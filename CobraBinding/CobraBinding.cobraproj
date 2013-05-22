@@ -11,7 +11,7 @@
     <UsePartialTypes>false</UsePartialTypes>
     <AssemblyName>MonoDevelop.CobraBinding</AssemblyName>
     <Description>This project provides the Cobra language binding addin for MonoDevelop.</Description>
-    <ReleaseVersion>0.2</ReleaseVersion>
+    <ReleaseVersion>0.4</ReleaseVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -99,9 +99,16 @@
     <Compile Include="TypeSystem\Parser.cobra" />
     <Compile Include="TypeSystem\LineInformation.cobra" />
     <Compile Include="Completion\CobraCompletionTextEditorExtension.cobra" />
-    <Compile Include="TypeSystem\Visitor.cobra" />
+    <Compile Include="TypeSystem\CobraModuleVisitor.cobra" />
     <Compile Include="TypeSystem\ParsedCobraDocument.cobra" />
     <Compile Include="CompilerManager.cobra" />
+    <Compile Include="Completion\Icons.cobra" />
+    <Compile Include="Completion\DataFactory.cobra" />
+    <Compile Include="Completion\NamedNodeData.cobra" />
+    <Compile Include="Completion\MethodVarsList.cobra" />
+    <Compile Include="Completion\BoxMembersList.cobra" />
+    <Compile Include="Completion\NameSpaceDeclsList.cobra" />
+    <Compile Include="Completion\CobraCompletionList.cobra" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Gui\Gui.csproj">
@@ -122,7 +129,7 @@
       <Private>False</Private>
       <Package>monodevelop</Package>
     </Reference>
-    <Reference Include="ICSharpCode.NRefactory, Version=0.0.0.0, Culture=neutral, PublicKeyToken=efe927acf176eea2">
+    <Reference Include="ICSharpCode.NRefactory, Version=5.0.0.0, Culture=neutral, PublicKeyToken=d4bfe873e7598c49">
       <Private>False</Private>
       <Package>monodevelop</Package>
     </Reference>

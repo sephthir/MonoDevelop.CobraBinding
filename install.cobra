@@ -1,6 +1,7 @@
 """
 This is the installation program for the Cobra Language Binding addin for MonoDevelop.
 It is not part of the addin itself and is intended to simplify the initial compilation.
+On Windows and Mac, this program will install the addin for Xamarin Studio instead.
 
 To compile and install the addin, enter the following at the command prompt:
 
@@ -13,17 +14,17 @@ To just compile the addin and not install the generated assemblies, do this inst
 
 	cobra install -run-args compile
 
-If you are running on 64-bit Windows 7, include the -clr-platform:x86 option.  See the
+If you are running on 64-bit Windows, include the -clr-platform:x86 option.  See the
 NOTE below or the README.md file for more details.
 
 So what does this program do?  It generates the addin assemblies and copies them
-to the <OS-dependent>/MonoDevelop-3.0/LocalInstall/Addins folder.  If you just compile
+to the <OS-dependent>/MonoDevelop-4.0/LocalInstall/Addins folder.  If you just compile
 the addin, the DLL files will be in the bin/Debug folders of each project.
 
 Once installed, you will be able to create, run, and debug programs written in Cobra
 using MonoDevelop.
 
-NOTE: If you want to be able to use this addin on Windows 7 64-bit, you need to:
+NOTE: If you want to be able to use this addin on Windows 64-bit, you need to:
  * Install (or reinstall) Cobra using the -x86 option
  * Make sure to target your programs for the x86 platform when running
  * Use the .NET runtime if you have .NET 4.5 installed 
@@ -54,7 +55,6 @@ class CobraBindingAddinInstaller
 	]
 	
 	var _filesToCompile = [
-		"Completion[__s]CobraCompletionTextEditorExtension.cobra",
 		"AssemblyInfo.cs",
 		"CobraLanguageBinding.cobra",
 		"CompilerManager.cobra",
@@ -62,8 +62,16 @@ class CobraBindingAddinInstaller
 		"Project[__s]CompilerBuildOptionsPanel.cobra",
 		"TypeSystem[__s]Parser.cobra",
 		"TypeSystem[__s]LineInformation.cobra",
-		"TypeSystem[__s]Visitor.cobra",
+		"TypeSystem[__s]CobraModuleVisitor.cobra",
 		"TypeSystem[__s]ParsedCobraDocument.cobra",
+		"Completion[__s]CobraCompletionList.cobra",
+		"Completion[__s]CobraCompletionTextEditorExtension.cobra",
+		"Completion[__s]DataFactory.cobra",
+		"Completion[__s]Icons.cobra",
+		"Completion[__s]NamedNodeData.cobra",
+		"Completion[__s]NameSpaceDeclsList.cobra",
+		"Completion[__s]BoxMembersList.cobra",
+		"Completion[__s]MethodVarsList.cobra",
 	]
 	
 	var _refs = [
@@ -78,14 +86,14 @@ class CobraBindingAddinInstaller
 	]
 	
 	var _winRefsPartialPaths = [
-		r"\MonoDevelop\bin\Mono.TextEditor.dll",
-		r"\MonoDevelop\bin\MonoDevelop.Core.dll",
-		r"\MonoDevelop\bin\MonoDevelop.Ide.dll",
-		r"\MonoDevelop\bin\ICSharpCode.NRefactory.dll",
+		r"\Xamarin Studio\bin\MonoDevelop.Core.dll",
+		r"\Xamarin Studio\bin\MonoDevelop.Ide.dll",
+		r"\Xamarin Studio\bin\Mono.TextEditor.dll",
+		r"\Xamarin Studio\bin\ICSharpCode.NRefactory.dll",
 		r"\GtkSharp\2.12\lib\gtk-sharp-2.0\gtk-sharp.dll",
+		r"\GtkSharp\2.12\lib\gtk-sharp-2.0\gdk-sharp.dll",
 		r"\GtkSharp\2.12\lib\gtk-sharp-2.0\glib-sharp.dll",
 		r"\GtkSharp\2.12\lib\gtk-sharp-2.0\atk-sharp.dll",
-		r"\GtkSharp\2.12\lib\gtk-sharp-2.0\gdk-sharp.dll",
 	]
 
 	def main
@@ -195,7 +203,8 @@ class CobraBindingAddinInstaller
 		ensure
 			result.endsWith(__s)			
 		body
-			if _isWindows				
+			if _isWindows
+				app = "XamarinStudio"
 				path = Environment.getEnvironmentVariable("LOCALAPPDATA")
 				if path == nil
 					# variable not defined before Vista
@@ -205,11 +214,13 @@ class CobraBindingAddinInstaller
 				home = Environment.getEnvironmentVariable("HOME")
 
 				if CobraCore.isRunningOnMac
+					app = "XamarinStudio"
 					path = "[home]/Library/Application Support"
 				else
+					app = "MonoDevelop"
 					path = "[home]/.local/share"
 			
-			return path + "[__s]MonoDevelop-3.0[__s]LocalInstall[__s]Addins[__s]CobraBinding[__s]"
+			return path + "[__s][app]-4.0[__s]LocalInstall[__s]Addins[__s]CobraBinding[__s]"
 	
 	def getCompilerCmds as List<of Process>
 		"""
@@ -267,29 +278,24 @@ class CobraBindingAddinInstaller
 			# and we'll use cobra to compile the CobraBinding project
 			info = _createProcessStartInfo
 			
-			if CobraCore.isRunningOnMono
-				/#
-				Workaround an inability of Mono to find the dependencies
-				of MonoDevelop.Ide.dll when loaded via reflection.
-				#/
-				if _isWindows
-					info.environmentVariables["MONO_PATH"] = "[progFiles]\\MonoDevelop\\bin"
-				else if CobraCore.isRunningOnMac
-					info.environmentVariables["MONO_PATH"] = "/Applications/MonoDevelop.app/Contents/MacOS/lib/monodevelop/bin"
-					monoDevPkgConfigPath = '/Applications/MonoDevelop.app/Contents/MacOS/lib/pkgconfig'
-					pkgConfigPath = Environment.getEnvironmentVariable('PKG_CONFIG_PATH') ? ''
-					if monoDevPkgConfigPath not in pkgConfigPath
-						if pkgConfigPath <> '', pkgConfigPath += ':'
-						info.environmentVariables["PKG_CONFIG_PATH"] = pkgConfigPath + monoDevPkgConfigPath
-				else
-					# Presumably Linux or BSD...
-					info.environmentVariables["MONO_PATH"] = "/usr/lib/monodevelop/bin"
+			if CobraCore.isRunningOnMac
+				info.environmentVariables["MONO_PATH"] = "/Applications/Xamarin\\ Studio.app/Contents/MacOS/lib/monodevelop/bin"
+				monoDevPkgConfigPath = '/Applications/Xamarin\\ Studio.app/Contents/MacOS/lib/pkgconfig'
+				pkgConfigPath = Environment.getEnvironmentVariable('PKG_CONFIG_PATH') ? ''
+				if monoDevPkgConfigPath not in pkgConfigPath
+					if pkgConfigPath <> '', pkgConfigPath += ':'
+					info.environmentVariables["PKG_CONFIG_PATH"] = pkgConfigPath + monoDevPkgConfigPath
 
 			if _verbosity >= 3
 				info.environmentVariables['MONO_LOG_LEVEL'] = "debug"
 				info.environmentVariables['MONO_LOG_MASK'] = "dll"
-
-			info.fileName = CobraCore.findCobraExe
+			
+			if CobraCore.isRunningOnMono
+				# let the script have Mono run the actual EXE
+				info.fileName = CobraCommand.find.path
+			else
+				# Run the EXE directly
+				info.fileName = CobraCommand.findExe.path
 			info.arguments = _getCobraArguments
 			info.workingDirectory += "CobraBinding"
 			cmds.add(Process(startInfo = info))
@@ -322,8 +328,8 @@ class CobraBindingAddinInstaller
 		cobraArgs = StringBuilder(
 			'-compile -copy-core -target:lib -out:"bin[__s]Debug[__s]MonoDevelop.CobraBinding.dll"'
 		)
-		cobraArgs.append(' -include-tests:no')
-
+		cobraArgs.append(' -turbo:yes')
+		
 		if _verbosity >= 2, cobraArgs.append(' -v -verbosity-ref:2')
 		else if _verbosity >= 1, cobraArgs.append(' -v -verbosity-ref:1')
 
@@ -334,7 +340,7 @@ class CobraBindingAddinInstaller
 			# on windows, we need to specify the full path to the MonoDevelop and Gtk libs
 			progFiles = Environment.getEnvironmentVariable("PROGRAMFILES")
 			
-			if File.exists(progFiles + r" (x86)\MonoDevelop\bin\MonoDevelop.Core.dll")
+			if File.exists(progFiles + r" (x86)\Xamarin Studio\bin\MonoDevelop.Core.dll")
 				# 32-bit on 64-bit Windows
 				progFiles += " (x86)"
 			
@@ -375,24 +381,6 @@ class CobraBindingAddinInstaller
 			path = installer._getCobraCompilerDllPath
 			assert File.exists(path)
 		body
-			/#
-			Get the location of cobra.exe, this will actually
-			return cobra.bat or a BASH script in most cases.
-			#/
-			cobraCmd = CobraCore.findCobraExe
-			
-			# execute: 'cobra -path'
-			proc = System.Diagnostics.Process()
-			proc.startInfo.fileName = cobraCmd
-			proc.startInfo.arguments = "-path"
-			proc.startInfo.useShellExecute = false
-			proc.startInfo.createNoWindow = true
-			proc.startInfo.windowStyle = ProcessWindowStyle.Hidden
-			proc.startInfo.workingDirectory = Directory.getCurrentDirectory + __s
-			proc.startInfo.environmentVariables["PATH"] = Environment.getEnvironmentVariable("PATH")
-			
-			# this should return something like '/usr/local/cobra/Cobra-0.9.0/bin/cobra.exe'
-			output = proc.runAndCaptureAllOutput.trim
-			cobraExeInfo = FileInfo(output)
-			cobraDir = cobraExeInfo.directoryName
+			cobraExe = CobraCommand.findExe.path
+			cobraDir = Path.getDirectoryName(cobraExe)
 			return cobraDir + __s + "Cobra.Compiler.dll"

@@ -24,11 +24,18 @@ class CobraLanguageBinding implements IDotNetLanguageBinding
 		assert binding.getFileName("test") == "test.cobra"
 		assert binding.isSourceCodeFile(FilePath("test.cobra"))
 		assert not binding.isSourceCodeFile(FilePath("test.cs"))
-				
+	
 	shared
 		var supportedClrVersions as ClrVersion[] = @[ ClrVersion.Net_2_0, ClrVersion.Net_4_0 ]
 		var languageName = "Cobra"
 		var sourceFileExtension = ".cobra"
+		
+	class AddOnKeys
+	
+		cue init is private
+			base.init
+	
+		const globalNameSpace = "MonoDevelop.CobraBinding.AddOnKeys.globalNameSpace"
 		
 	var _isWindows as bool
 	var _targetArgs as Dictionary<of CompileTarget, String>
@@ -80,28 +87,74 @@ class CobraLanguageBinding implements IDotNetLanguageBinding
 			# references (add each one only once)
 			refs = HashSet<of String>()
 			pkgs = HashSet<of String>()
-			
-			/#
-			Workaround an issue where some System.Core types from .NET 4.0 cannot
-			be resolved without an explicit reference.  The irony is that HashSet
-			is one of those that cannot be resolved :)
-			
-			This issue seems to only exist on Mono. We shouldn't check to see if
-			we should only include this workaround on non-Windows systems because
-			you can also use the Mono runtime on Windows.
-			#/
-			refs.add("System.Core")
-			argsBuilder.append(" -ref:System.Core")
+			referencedSysCore = false
+			slash = Path.directorySeparatorChar
+
+			libPaths = List<of String>()
+			sysAsmService = MonoDevelop.Core.Runtime.systemAssemblyService
+			runTime as Assemblies.TargetRuntime = sysAsmService.defaultRuntime to !
+			if configuration.parentItem <> nil
+				proj = configuration.parentItem to !
+				runTime = proj.targetRuntime to !
 
 			for projRef in items.getAll<of ProjectReference>
 				branch projRef.referenceType
 					on ReferenceType.Package
-						if pkgs.add(projRef.package.name)
-							argsBuilder.append(' -pkg:"[projRef.package.name]"')
+					
+						pkg = projRef.package
+					
+						if _isWindows
+							/#
+							The '-pkg' option isn't available on Windows. We need
+							to explicitly specify all the referenced assemblies and
+							their dependencies.
+							#/
+							for fileName in projRef.getReferencedFileNames(configSelector)
+								if refs.add(fileName)
+									argsBuilder.append(' -ref:"[fileName]"')
+									if not referencedSysCore
+										referencedSysCore = fileName.endsWith("[slash]System.Core.dll")
+										
+							if pkg.gacRoot and not libPaths.contains(pkg.gacRoot)
+								libPaths.add(pkg.gacRoot)
+								
+							if pkg.requires
+								for requiredPkg in pkg.requires.split(' ')
+									rpkg = runTime.assemblyContext.getPackage(requiredPkg)
+									if not rpkg, continue
+									for asm in rpkg.assemblies
+										if refs.add(asm.location)
+											argsBuilder.append(' -ref:"[asm.location]"')
+											if not referencedSysCore
+												referencedSysCore = asm.location.endsWith("[slash]System.Core.dll")
+						else
+							# when not on Windows, we can use the -pkg option directly
+							if pkgs.add(pkg.name)
+								argsBuilder.append(' -pkg:"[pkg.name]"')
 					else
+						# this is either a direct assembly reference or a project reference
 						for fileName in projRef.getReferencedFileNames(configSelector)
 							if refs.add(fileName)
 								argsBuilder.append(' -ref:"[fileName]"')
+								if not referencedSysCore
+									referencedSysCore = fileName.endsWith("[slash]System.Core.dll")
+			
+			if not referencedSysCore
+				/#
+				Workaround an issue where some System.Core types from .NET 4.0 cannot
+				be resolved without an explicit reference.  So, if we haven't already
+				added an explicit reference, add one now.
+				
+				This issue seems to only exist on Mono. We shouldn't check to see if
+				we should only include this workaround on non-Windows systems because
+				you can also use the Mono runtime on Windows.
+				#/
+				refs.add("System.Core")
+				argsBuilder.append(" -ref:System.Core")
+			
+			if libPaths.count > 0
+				for libPath in libPaths
+					argsBuilder.append(' -lib:"[libPath]"')
 
 			# what kind of assembly will we generate?
 			argsBuilder.append(_targetArgs[configuration.compileTarget])
@@ -109,6 +162,17 @@ class CobraLanguageBinding implements IDotNetLanguageBinding
 			# are we targetting a specific platform?
 			if configuration.platform <> nil and configuration.platform.length > 0
 				argsBuilder.append(" -clr-platform:[configuration.platform]")
+
+
+			# a project always exists in memory, but not on disk for single files
+			if not File.exists(configuration.parentItem.fileName.toString)
+				/#
+				This is a fake project. We get this when a user directly opens a
+				source file without creating a project/solution. We'll use the
+				location of the single source file as the working directory.
+				#/
+				standAloneFile = items[0] to IFileItem
+				configuration.parentItem.baseDirectory = standAloneFile.fileName.parentDirectory
 
 			# what will we call the generated assembly?
 			asmName = configuration.compiledOutputName
@@ -119,6 +183,10 @@ class CobraLanguageBinding implements IDotNetLanguageBinding
 			nativeArgsBuilder = StringBuilder()
 			
 			for projFile in items.getAll<of ProjectFile>
+				
+				# workaround an issue where directories are sometimes included with project files
+				if Directory.exists(projFile.name), continue
+				
 				branch projFile.buildAction
 					on BuildAction.compile
 						toCompile.append(' "[projFile.name]"')
@@ -148,31 +216,44 @@ class CobraLanguageBinding implements IDotNetLanguageBinding
 			# add the list of files to compile
 			argsBuilder.append(toCompile.toString)
 
-			# create and setup the process which will execute the Cobra compiler
-			# if the user has specified the location of the compiler, use that
-			cobraExe = Environment.getEnvironmentVariable("COBRA_EXE")
+			if CobraCore.isRunningOnMono
+				cobraCmd = CobraCommand.find
+			else
+				cobraCmd = CobraCommand.findExe
 			
-			if cobraExe is nil or cobraExe.length == 0
-				# the user has not specified the location of the compiler
-				# we'll rely on cobra being in the user's path
-				cobraExe = "cobra"
+			if cobraCmd == nil
+				errMsg = "Could not find cobra.exe. " + _
+					"Try adding its location to your PATH environment variable."
+				monitor.reportError(errMsg, nil)
+				failedResult = BuildResult()
+				failedResult.addError(errMsg)
+				return failedResult
 
-			# use the project directory as the working directory unless it's not defined
-			try
-				workingDir = configuration.parentItem.baseDirectory.toString
-			catch
-				workingDir = "."
-				
-			proc = _spawnCobraCompilerProcess(cobraExe to !, argsBuilder.toString, workingDir)
+			# use the project directory as the working directory
+			workingDir = configuration.parentItem.baseDirectory.toString
+
+			# compile the code
+			proc = _spawnCobraCompilerProcess(cobraCmd.path, argsBuilder.toString, workingDir)
+
+			monitor.log.writeLine("Working directory: " + workingDir)
+			# TODO: This creates one giant long string that requires horiztonal scrolling,
+			# it should wrap or logically group the arguments instead
+			monitor.log.writeLine(cobraCmd.path + " " + proc.startInfo.arguments)
 
 			# parse the compiler output
 			lines = List<of String>()
-			lines.addRange(proc.standardError.readToEnd.split('\n'))
+
+			stdErr = proc.standardError.readToEnd
+			if stdErr.length, monitor.reportError(stdErr, nil)
+			lines.addRange(stdErr.split('\n'))
+
 			stdOut = proc.standardOutput.readToEnd
+			if stdOut.length, monitor.log.writeLine(stdOut)
 			lines.addRange(stdOut.split('\n'))
 			
 			buildResult = _parseCompilerOutput(lines)
 			buildResult.compilerOutput = stdOut
+
 			return buildResult
 	
 	def _spawnCobraCompilerProcess(cobraExe as String, cobraArgs as String, workingDir as String) as Process
@@ -188,11 +269,11 @@ class CobraLanguageBinding implements IDotNetLanguageBinding
 			
 			expect Exception
 				binding._spawnCobraCompilerProcess("", "", "")
-				
-			p = binding._spawnCobraCompilerProcess("cobra", "-version", ".")
+			cobraExe = CobraCore.findCobraExe to !
+			p = binding._spawnCobraCompilerProcess(cobraExe, "-version", ".")
 			assert p.standardOutput.readToEnd.startsWith("Cobra ")
 			
-			p = binding._spawnCobraCompilerProcess("cobra", "", ".")
+			p = binding._spawnCobraCompilerProcess(cobraExe, "", ".")
 			stdOut = p.standardOutput.readToEnd
 			assert stdOut.contains("The Cobra Programming Language")
 			assert stdOut.contains("Usage:")
@@ -207,14 +288,9 @@ class CobraLanguageBinding implements IDotNetLanguageBinding
 			proc.startInfo.createNoWindow = true
 			
 			proc.startInfo.fileName = cobraExe
-			if _isWindows and proc.startInfo.fileName == "cobra"
-				proc.startInfo.environmentVariables["PATH"] = Environment.getEnvironmentVariable("PATH")
-				proc.startInfo.fileName += ".bat"
 			proc.startInfo.arguments = cobraArgs
 			proc.startInfo.workingDirectory = workingDir
 			
-			trace proc.startInfo.arguments
-
 			proc.start
 			proc.waitForExit
 			

@@ -1,0 +1,342 @@
+use Cobra.Compiler
+
+use MonoDevelop.Ide.CodeCompletion
+
+use ICSharpCode.NRefactory.Completion
+
+namespace MonoDevelop.CobraBinding.Completion
+
+class NamedNodeData inherits CompletionData
+	"""
+	This class represents a single entry for use in a list of completion data.
+	"""
+	test notGenericNoOverloads
+		ast = CobraCompletionTextEditorExtension.createTestData
+		for ud in ast.topNameSpace.useDirectives
+			if ud.boundNameSpace <> nil and ud.boundNameSpace.fullName == "System"
+				objectType = ud.boundNameSpace.memberForName("Object")
+				stringType = ud.boundNameSpace.memberForName("String")
+				break
+		
+		oData = NamedNodeData(objectType)
+		assert not oData.hasOverloads
+		assert oData.displayText == oData.completionText == "Object"
+		
+		sData = NamedNodeData(stringType)
+		assert not sData.hasOverloads
+		assert sData.displayText == sData.completionText == "String"
+		
+		if stringType inherits Box
+			# method w/o overload
+			methodType = stringType.declForName("getHashCode")
+			hcData = NamedNodeData(methodType)
+			assert not hcData.hasOverloads
+			assert hcData.displayText == hcData.completionText == "getHashCode"
+			
+			# method with overload
+			overloadedMethodType = stringType.declForName("equals")
+			eData = NamedNodeData(overloadedMethodType)
+			assert eData.hasOverloads
+			assert eData.displayText == eData.completionText == "equals"
+			overloadCount = 0
+			for o in eData.overloadedData
+				overloadCount += 1
+			assert overloadCount == 6
+	
+	test isGenericNoOverloads
+		ast = CobraCompletionTextEditorExtension.createTestData
+		for ud in ast.topNameSpace.useDirectives
+			if ud.boundNameSpace <> nil and ud.boundNameSpace.fullName == "System.Collections.Generic"
+				linkedListType = ud.boundNameSpace.memberForName("LinkedList<of>")
+				dictionaryType = ud.boundNameSpace.memberForName("Dictionary<of,>")
+				break
+		
+		lData = NamedNodeData(linkedListType)
+		assert not lData.hasOverloads
+		assert lData.displayText == "LinkedList<of"
+		assert lData.completionText == "LinkedList<of "
+		assert lData.signature == "System.Collections.Generic.LinkedList<of T>"
+		
+		dData = NamedNodeData(dictionaryType)
+		assert not dData.hasOverloads
+		assert dData.displayText == "Dictionary<of"
+		assert dData.completionText == "Dictionary<of "
+		assert dData.signature == "System.Collections.Generic.Dictionary<of TKey, TValue>"
+	
+	test isGenericHasOverloads
+		ast = CobraCompletionTextEditorExtension.createTestData
+		actionType as IMember? = nil
+		pairType as IMember? = nil
+		for ud in ast.topNameSpace.useDirectives
+			if ud.boundNameSpace <> nil and (actionType == nil or pairType == nil)
+				if ud.boundNameSpace.fullName == "System" and actionType == nil
+					actionType = ud.boundNameSpace.memberForName("Action<of>")
+				else if ud.boundNameSpace.fullName.startsWith("Cobra.Core") and pairType == nil
+					pairType = ud.boundNameSpace.memberForName("Pair<of>")
+			if actionType <> nil and pairType <> nil
+				break
+		
+		aData = NamedNodeData(actionType)
+		assert aData.displayText == "Action<of"
+		assert aData.completionText == "Action<of "
+		assert aData.signature == "System.Action<of T>"
+		assert aData.hasOverloads
+		overloadCount = 0
+		for o in aData.overloadedData
+			overloadCount += 1
+		assert overloadCount == 8
+		
+		pData = NamedNodeData(pairType)
+		assert pData.displayText == "Pair<of"
+		assert pData.completionText == "Pair<of "
+		assert pData.signature == "Cobra.Core.Pair<of T>"
+		assert pData.hasOverloads
+		overloadCount = 0
+		for o in pData.overloadedData
+			overloadCount += 1
+		assert overloadCount == 2
+
+	var _node as INamedNode
+	var _tooltipInfo as TooltipInformation? = nil
+	
+	cue init(node as INamedNode)
+		base.init
+		_node = node
+		.icon = Icons.getStock(node)
+		name = node.name
+		if node inherits Box
+			if node.isGeneric
+				tagPos = name.indexOf(c'<')
+				.displayText = name.substring(0, tagPos) + "<of"
+			else
+				.displayText = name
+		else
+			.displayText = name
+		
+		# this is text visible in the completion list in a slightly darker color font, is it useful?
+		#.displayDescription = ""
+		
+		# this might be for marking which members implement something in an interface...I am not sure
+		#.completionCategory =
+		
+		# I think this is for marking some members as obsolete and using a strikethrough font
+		#.displayFlags =
+	
+	get node from var
+	
+	get completionText as String is override
+		"""
+		The actual text inserted into the document
+		when a completion data entry is selected.
+		"""
+		name = _node.name
+		if _node inherits Box
+			if _node.isGeneric
+				tagPos = name.indexOf(c'<')
+				return name.substring(0, tagPos) + "<of "
+		
+		return name
+		
+	def createTooltipInformation(smartWrap as bool) as TooltipInformation is override
+		"""
+		Create the tooltip that displays next to the highlighted completion entry.
+		"""
+		if _tooltipInfo <> nil, return _tooltipInfo
+		
+		info = TooltipInformation()
+		
+		sigMarkup = .signature
+		sigMarkup = sigMarkup.replace("<", "&lt;")
+		sigMarkup = sigMarkup.replace(">", "&gt;")
+		info.signatureMarkup = sigMarkup
+		
+		sumMarkup = .description
+		info.summaryMarkup = sumMarkup
+		
+		_tooltipInfo = info
+		return _tooltipInfo to !
+		
+	get signature as String
+		"""
+		Appears as the signatureMarkup in the tooltip for this completion entry.
+		"""
+		
+		# a node may not have a type if we couldn't bind the types in the AST
+		desc = "?"
+		
+		try
+			if _node inherits Box
+				if _node.isGeneric
+					desc = _createGenericSignature(_node)
+				else
+					desc = _node.qualifiedName
+				
+			else if _node inherits AbstractMethod
+				if _node inherits Method
+					desc = _createMethodSignature(_node)
+				else
+					desc = _node.resultType.name
+				
+			else if _node inherits Property
+				desc = _node.resultType.name
+			
+			else if _node inherits BoxEvent
+				desc = _node.resultType.name
+			
+			else if _node inherits BoxField
+				desc = _node.type.name
+			
+			else if _node inherits AbstractLocalVar
+				desc = _node.type.name
+			
+			else if _node inherits NameSpace
+				desc = _node.fullName
+			
+			else if _node inherits EnumDecl
+				desc = "[_node.parentNameSpace.fullName].[_node.name]"
+			
+			else if _node inherits EnumMember
+				if _node.value == nil
+					# no need to include tooltip because the user has already typed the EnumDecl name
+					desc = ""
+				else
+					desc = "[_node.resultType.name] (value = [_node.value])"
+			else
+				desc = _node.getType.assemblyQualifiedName ? ""
+		catch ex as Exception
+			desc = "Doh! Something went wrong trying to generate the signatureMarkup..."
+			trace ex.toString
+		
+		# remove tab characters otherwise it messes up the formatting in the tooltip
+		desc = desc.replace("\t", "")
+		
+		#TODO: fix line breaks in the doc string
+		return desc
+		
+	get summary as String
+		return .description
+	
+	get description as String is override
+		"""
+		Appears as the summaryMarkup in the tooltip for this completion entry.
+		"""
+		n = _node to dynamic
+		try
+			desc = n.docString ? ""
+			# remove tab characters otherwise it messes up the formatting in the tooltip
+			desc = desc.replace("\t", "")
+			#TODO: fix line breaks in the doc string
+		catch
+			desc = ""
+		
+		return desc
+		
+	def _createMethodSignature(m as Method) as String
+		"""
+		Returns a string with the parameter names and types (if any) in the method's tooltip.
+		"""
+		if m.params.count > 0
+			sb = StringBuilder()
+			for p in m.params
+				if sb.length == 0
+					sb.append("(")
+				else
+					sb.append(", ")
+				sb.append("[p.name] as [p.type.name]")
+			if sb.length > 0, sb.append(") as ")
+			sb.append(m.resultType.name)
+			return sb.toString
+		else
+			return m.resultType.name
+			
+	def _createGenericSignature(b as Box) as String
+		"""
+		Given a box declaration for a generic type, will return a string suitable for use in a tooltip.
+		"""
+		require b.isGeneric
+		
+		if b.genericParams.count == 1
+			toReplace = "<of>"
+			replaceWith = "<of [b.genericParams[0].name]>"
+		else
+			toReplace = "<of"
+			replaceWith = ""
+			for gp in b.genericParams
+				if replaceWith.length > 0
+					toReplace += ","
+					replaceWith += ", [gp.name]"
+				else
+					replaceWith = "<of [gp.name]"
+			toReplace += ">"
+			replaceWith += ">"
+			
+		return b.qualifiedName.replace(toReplace, replaceWith)
+		
+	get hasOverloads as bool is override
+		if _node inherits MemberOverload
+			return _node.members.count <> 0
+		else if _node inherits Method
+			if _node.overloadGroup <> nil
+				return _node.overloadGroup.members.count > 0
+		else if _node inherits Box
+			if _node.isGeneric
+				return _hasGenericOverloads
+				
+		return false
+		
+	def _hasGenericOverloads as bool
+		"""
+		Returns true if the parent NameSpace of _node has other Box declarations inside it 
+		that differ only by the number of generic parameters compared to _node.
+		
+		e.g. for _node = Action<of T> class, we would return true since the System namespace 
+		also contains Action<of T1, T2>, Action<of T1, T2, T3>, etc.
+		"""
+		require
+			_node inherits Box
+			# TODO: replace this...
+			_node.name.indexOf(c'<') > 0
+			# with this...
+			#(_node to Box).isGeneric
+			# or this...
+			#_node.isGeneric
+		body
+			b = _node to Box
+			baseName = b.name
+			tagPos = baseName.indexOf(c'<')
+			baseName = baseName.substring(0, tagPos)
+			ns = b.parentNameSpace
+			if ns <> nil
+				for d in ns.declsInOrder
+					if d is b, continue
+					if d inherits Box
+						if d.isGeneric and d.name.startsWith(baseName) and d.name[tagPos] == c'<'
+							return true
+			return false
+	
+	get overloadedData as IEnumerable<of ICompletionData>? is override
+		if _node inherits Method
+			if _node.overloadGroup <> nil
+				overloads = CobraCompletionList()
+				for m in _node.overloadGroup.members
+					overloads.add(NamedNodeData(m))
+				return overloads
+		else if _node inherits Box
+			if _node.isGeneric
+				overloads = CobraCompletionList()
+				baseName = _node.name
+				tagPos = baseName.indexOf(c'<')
+				baseName = baseName.substring(0, tagPos)
+				ns = _node.parentNameSpace
+				for d in ns.declsInOrder
+					if d inherits Box
+						if d.isGeneric and d.name.startsWith(baseName) and d.name[tagPos] == c'<'
+							overloads.add(NamedNodeData(d))
+				return overloads
+		else if _node inherits MemberOverload
+			overloads = CobraCompletionList()
+			for m in _node.members
+				overloads.add(NamedNodeData(m))
+			return overloads
+		return nil
+		

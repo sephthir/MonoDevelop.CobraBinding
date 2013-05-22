@@ -1,0 +1,76 @@
+use Cobra.Compiler
+
+use MonoDevelop.Ide.CodeCompletion
+
+use ICSharpCode.NRefactory.Completion
+
+namespace MonoDevelop.CobraBinding.Completion
+
+class BoxMembersList inherits CobraCompletionList
+	"""
+	This class is a completion data list whose entries are the members of the given Box.
+	"""
+	
+	test
+		ast = CobraCompletionTextEditorExtension.createTestData
+		ns1 = ast.topNameSpace.memberForName("TopLevelNameSpace") to NameSpace
+		ns2 = ns1.memberForName("SecondLevelNameSpace") to NameSpace
+		ns3 = ns2.memberForName("ThirdLevelNameSpace")to NameSpace
+		f = ns3.memberForName("First") to Class
+		
+		data = BoxMembersList(f)
+		assert data.box is f
+		assert data.count >= 33 and data.count <= f.allMembers.count
+		
+		filteredData = BoxMembersList(f, do(m as IBoxMember) = "public" in m.isNames)
+		assert filteredData.box is f
+		assert filteredData.count >= 17
+		assert filteredData.count < data.count
+	
+	# Used to only include some Box members such as "only public" or "only shared".
+	sig Filter(m as IBoxMember) as bool
+	
+	var _box as Box
+	
+	get box from var
+	
+	# Used to prevent duplicates
+	var _uniqueEntries = HashSet<of String>()
+	
+	cue init(b as Box)
+		.init(b, nil)
+	
+	cue init(b as Box, filter as Filter?)
+		base.init
+		_box = b
+		
+		try
+			# our compiler instance may no longer be valid so these calls could fail
+			if not b.didBindInh, b.bindAll
+			_addMembers(b.allMembers, filter)
+		catch
+			print "Failed to .bindAll or access .allMembers for [b.name]"
+		
+		try
+			_addMembers(b.declsInOrder, filter)
+		catch
+			print "Failed to access .declsInOrder for [b.name]"
+		
+		
+	def _addMembers(members as IBoxMember*, filter as Filter?)
+		
+		/# Pretend we've already seen 'cue.init' and the indexer '[]'
+		so they are not included in the final list #/
+		_uniqueEntries.add("cue.init")
+		_uniqueEntries.add(ns'[]')
+		
+		if filter == nil
+			# include all members
+			for m in members
+				if _uniqueEntries.add(m.name)
+					.add(NamedNodeData(m))
+		else
+			# we should only include some members
+			for m in members
+				if filter(m) and _uniqueEntries.add(m.name)
+					.add(NamedNodeData(m))

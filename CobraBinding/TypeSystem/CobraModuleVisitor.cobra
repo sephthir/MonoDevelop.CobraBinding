@@ -1,0 +1,365 @@
+use Cobra.Compiler
+
+use MonoDevelop.CobraBinding
+
+use ICSharpCode.NRefactory.TypeSystem
+
+namespace MonoDevelop.CobraBinding.TypeSystem
+
+class CobraModuleVisitor inherits Cobra.Core.Visitor
+	"""
+	This class visits every declaration in every namespace in the
+	given CobraModule.
+
+	The region of each declaration is added to a dictionary keyed by
+	the declaration itself (as an ISyntaxNode).
+
+	All identifiers and their types are stored in a symbol table
+	which is constructed using nested dictionaries.  The first
+	level is keyed by "scope" which is a DomRegion.  The second
+	level is keyed by the identifier name as a String.  The value
+	in the second level is the node corresponding to the identifier
+	declaration (as an INamedNode).
+	"""
+
+	test singleBox
+		visitor = CobraModuleVisitor()
+		ast = .createTestData1
+		visitor.visit(ast)
+		
+		assert visitor.fileName == ast.fileName
+		
+		wholeFileRegion = visitor.regionMap[ast.topNameSpace]
+		assert wholeFileRegion.beginLine == 1
+		assert wholeFileRegion.beginColumn == 1
+		assert wholeFileRegion.endLine == 229
+		assert wholeFileRegion.endColumn == Int32.maxValue
+		assert visitor.symbolTable[wholeFileRegion].count == 439 # includes all decls from implicit use directives
+		
+		c = ast.topNameSpace.memberForName("HowToUseLists") to Class
+		classRegion = visitor.regionMap[c]
+		assert classRegion.beginLine == 1
+		assert classRegion.beginColumn == 1
+		assert classRegion.endLine == 229
+		assert classRegion.endColumn == Int32.maxValue - 1
+		
+		# reads backwards but this asserts that classRegion is inside wholeFileRegion
+		assert wholeFileRegion.isInside(classRegion.begin)
+		assert wholeFileRegion.isInside(classRegion.end)
+		
+		idMap = visitor.symbolTable[classRegion]
+		assert idMap.count == 15
+		for name, node in idMap
+			assert node inherits AbstractMethod
+			try
+				assert node is c.memberForName(name)
+			catch
+				am = node to AbstractMethod
+				assert node to IOverloadable in am.overloadGroup.members
+		
+		m = c.memberForName("main") to Method
+		mainRegion = visitor.regionMap[m]
+		assert mainRegion.beginLine == 3
+		assert mainRegion.beginColumn == 9
+		assert mainRegion.endLine == 9
+		assert mainRegion.endColumn == Int32.maxValue - 1
+		assert visitor.symbolTable[mainRegion].count == 0
+		
+		m = c.memberForName("basics") to Method
+		basicsRegion = visitor.regionMap[m]
+		assert basicsRegion.beginLine == 11
+		assert basicsRegion.endLine == 40
+		assert visitor.symbolTable[basicsRegion].count == 1
+		assert visitor.symbolTable[basicsRegion]["ints"] is m.locals[0]
+		
+		m = c.memberForName("looping") to Method
+		loopingRegion = visitor.regionMap[m]
+		assert loopingRegion.beginLine == 42
+		assert loopingRegion.endLine == 86
+		assert visitor.symbolTable[loopingRegion].count == 7
+		for v in m.locals
+			assert visitor.symbolTable[loopingRegion].containsKey(v.name)
+			assert visitor.symbolTable[loopingRegion][v.name] is v
+	
+	test multipleBoxes
+		visitor = CobraModuleVisitor()
+		ast = .createTestData2
+		visitor.visit(ast)
+		assert visitor.fileName == ast.fileName
+		
+		wholeFileRegion = visitor.regionMap[ast.topNameSpace]
+		assert wholeFileRegion.beginLine == 1
+		assert wholeFileRegion.beginColumn == 1
+		assert wholeFileRegion.endLine == 34
+		assert wholeFileRegion.endColumn == Int32.maxValue
+		assert visitor.symbolTable[wholeFileRegion].count >= 530 # includes decls from System.Diagnostics
+		
+		ns = ast.topNameSpace.memberForName("Foo") to NameSpace
+		nsRegion = visitor.regionMap[ns]
+		assert nsRegion.beginLine == 3
+		assert nsRegion.endLine == 34
+		
+		barClass = ns.memberForName("Bar") to Class
+		barRegion = visitor.regionMap[barClass]
+		assert barRegion.beginLine == 5
+		assert barRegion.endLine == 13
+		
+		# the class is only visible inside the namespace region
+		assert visitor.symbolTable[nsRegion][barClass.name] is barClass
+		assert not visitor.symbolTable[wholeFileRegion].containsKey(barClass.name)
+		
+		m = barClass.memberForName("main") to Method
+		mainRegion = visitor.regionMap[m]
+		assert mainRegion.beginLine == 6
+		assert mainRegion.endLine == 13
+		assert visitor.symbolTable[mainRegion].count == 3
+		
+		bazClass = ns.memberForName("Baz") to Class
+		bazRegion = visitor.regionMap[bazClass]
+		
+		# reads backwards but this asserts that bazRegion is inside nsRegion
+		assert nsRegion.isInside(bazRegion.begin)
+		assert nsRegion.isInside(bazRegion.end)
+		
+		init2Region = DomRegion(bazRegion.fileName, 27, 6, 31, Int32.maxValue - 1)
+		assert visitor.symbolTable[init2Region].count == 3
+		
+		m = bazClass.memberForName("toString") to Method
+		toStringRegion = visitor.regionMap[m]
+		assert bazRegion.isInside(toStringRegion.begin)
+		assert bazRegion.isInside(toStringRegion.end)
+		assert visitor.symbolTable[toStringRegion].count == 0
+	
+	var __ast as CobraModule?
+	
+	var _fileName as String
+	var _regionMap as Dictionary<of ISyntaxNode, DomRegion>
+	var _symbolTable as Dictionary<of DomRegion, Dictionary<of String, INamedNode>>
+
+	get fileName from var
+	get regionMap from var
+	get symbolTable from var
+
+	cue init
+		base.init
+		__ast = nil
+		_fileName = ""
+		_regionMap = Dictionary<of ISyntaxNode, DomRegion>()
+		_symbolTable = Dictionary<of DomRegion, Dictionary<of String, INamedNode>>()
+
+	def _addRegion(node as ISyntaxNode)
+	
+		beginToken = node.token
+		beginLine = beginToken.lineNum
+		beginCol = beginToken.colNum
+		
+		endToken = node.endToken
+		endLine = endToken.lineNum
+		endCol = Int32.maxValue - 1
+		
+		if node is __ast.topNameSpace
+			# If the top-level namespace contains only a single class of the
+			# same size, we'll have a hash collision.  So, make sure the top
+			# namespace will encompass a class of the same size.
+			endCol += 1
+		
+		region = DomRegion(_fileName, beginLine, beginCol, endLine, endCol)
+		if _symbolTable.containsKey(region)
+			# do not violate contract in __addIdentifiers
+			# TODO: we need to make sure the correct node
+			# has been saved in the _regionMap and the
+			# correct entries are in the _symbolTable
+			print "duplicate region [region]"
+			print "existing = [_symbolTable[region].keys]"
+			print "duplicate = [node]"
+			return
+		
+		_regionMap[node] = region
+
+		if node implements INamedNode
+			if node implements IContainer
+				# this would be something like a Box or NameSpace and probably
+				# has stuff like fields, methods, or other Boxes in it
+				__addIdentifiers(node, region)
+				
+			else if node inherits AbstractMethod
+				# this probably has local variables in it
+				__addIdentifiers(node, region)
+
+
+	def __addIdentifiers(node as INamedNode, region as DomRegion)
+		"""
+		Should only be called by _addRegion
+		"""
+		require not _symbolTable.containsKey(region)
+		
+		_symbolTable[region] = Dictionary<of String, INamedNode>()
+		
+		idMap = _symbolTable[region]
+		
+		if node inherits NameSpace
+			key = CobraLanguageBinding.AddOnKeys.globalNameSpace
+			if node is __ast.topNameSpace and node.addOnValues.containsKey(key)
+				# use the unified global namespace instead of the module's topNameSpace
+				globalNS = node.addOnValues[key] to NameSpace
+				for nsMember in globalNS.declsInOrder
+					idMap[nsMember.name] = nsMember
+				
+				# declarations from used namespaces are visible in this context
+				for useDirective in node.useDirectives
+					if useDirective.boundNameSpace <> nil
+						for nsMember in useDirective.boundNameSpace.declsInOrder
+							idMap[nsMember.name] = nsMember
+			else if node.isUnified or node.unifiedNameSpace == nil
+				for nsMember in node.declsInOrder
+					idMap[nsMember.name] = nsMember
+			else
+				# the unified namespace will include all decls, not just the ones from this module
+				for nsMember in node.unifiedNameSpace.declsInOrder
+					idMap[nsMember.name] = nsMember
+
+		else if node inherits Box
+			for boxMember in node.allMembers
+				idMap[boxMember.name] = boxMember
+
+		else if node inherits AbstractMethod
+			for v in node.locals
+				idMap[v.name] = v
+
+			for p in node.params
+				idMap[p.name] = p
+			
+		else
+			print "Unkown IContainer: [node.toString] for region [region.toString]"
+
+
+	get methodName as String is override
+		return "visit"
+		
+	def visit(m as CobraModule)
+		"""
+		This is the externally called "top-level" method.
+
+		You shouldn't re-use a CobraModuleVisitor instance on
+		a different module without manually clearing out the
+		dictionaries first.
+		"""
+		_fileName = m.fileName
+		__ast = m
+		.visit(m.topNameSpace)
+		
+	def visit(ns as NameSpace)
+		_addRegion(ns)
+		if ns is __ast.topNameSpace
+			# regions for namespace decls incorrectly encompass the
+			# entirety of the subnamespaces they declare/contain.
+			# Only visit the "right-most" namespace declaration.
+			for d in ns.declsInOrder
+				if d inherits NameSpace
+					ns = _getDeepestNameSpaceDecl(d)
+					.dispatch(ns)
+				else
+					.dispatch(d)
+		else
+			.dispatch(ns.declsInOrder)
+	
+	def _getDeepestNameSpaceDecl(rootNS as NameSpace) as NameSpace
+		"""
+		Finds the "right-most" namespace declaration on the same line as the
+		given namespace declaration.
+		
+		Example: given the NameSpace node for MonoDevelop coming from a line
+		that declares 'namespace MonoDevelop.CobraBinding.TypeSystem',
+		this function returns the node for the TypeSystem NameSpace.
+		"""
+		test noNameSpaceDecls
+			visitor = CobraModuleVisitor()
+			ast = .createTestData2
+			assert visitor._getDeepestNameSpaceDecl(ast.topNameSpace) is ast.topNameSpace
+		test singleNameSpaceDecl
+			visitor = CobraModuleVisitor()
+			ast = .createTestData2
+			ns = ast.topNameSpace.memberForName("Foo") to NameSpace
+			assert visitor._getDeepestNameSpaceDecl(ns).name == "Foo"
+		test multipleNameSpaceDecls
+			visitor = CobraModuleVisitor()
+			ast = Completion.CobraCompletionTextEditorExtension.createTestData
+			ns = ast.topNameSpace.memberForName("TopLevelNameSpace") to NameSpace
+			assert visitor._getDeepestNameSpaceDecl(ns).name == "ThirdLevelNameSpace"
+		body
+			lineNum = rootNS.token.lineNum
+			for d in rootNS.declsInOrder
+				if d inherits NameSpace
+					if d.token.lineNum == lineNum
+						return _getDeepestNameSpaceDecl(d)
+			return rootNS
+		
+	def visit(b as Box)
+	
+		if b inherits MethodSig
+			# this is a Box but its member declarations
+			# map to the same region as the parent which
+			# causes issues later
+			return
+	
+		_addRegion(b)
+		.dispatch(b.declsInOrder)
+		.dispatch(b.testMethods)
+
+	def visit(m as AbstractMethod)
+		_addRegion(m)
+		.dispatch(m.testMethods)
+		
+	def visit(i as Initializer)
+		if not i.isImplicit
+			_addRegion(i)
+			.dispatch(i.testMethods)
+		
+	def visit(p as Property)
+		if p.getPart <> nil and p.setPart <> nil
+			if p.getPart.token == p.setPart.token
+				# (e.g. pro someProperty from var)
+				return
+	
+		if p.getPart <> nil
+			_addRegion(p.getPart to !)
+			.dispatch(p.getPart.testMethods)
+
+		else if p.setPart <> nil
+			_addRegion(p.setPart to !)
+			.dispatch(p.setPart.testMethods)
+		
+		.dispatch(p.testMethods)
+		
+
+	def visit(n as INode)
+		"""
+		This is the generic "catch-all" method for nodes that don't
+		provide meaningful region/type information.
+		"""
+		pass
+		
+
+	shared
+		# These functions are only for supporting test methods.
+		def createTestData1 as CobraModule
+			return __createTestData("ForCobraModuleVisitorTesting1.cobra")
+
+		def createTestData2 as CobraModule
+			return __createTestData("ForCobraModuleVisitorTesting2.cobra")
+
+		def __createTestData(fileName as String) as CobraModule
+			refs = List<of String>()
+			cm = CompilerManager.instance
+			testData = CompilerManager.readTestData("no_errors")
+
+			for filePath, code in testData
+				if filePath.endsWith(fileName)
+					sourceMap = Dictionary<of String, String>()
+					sourceMap[filePath] = code
+					results = cm.parseAndBind(sourceMap, refs, filePath)
+			for r in results
+				if r inherits CobraModule
+					return r
+			
+			throw FallThroughException()

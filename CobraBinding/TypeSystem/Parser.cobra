@@ -1,5 +1,3 @@
-use System.Security.Cryptography
-
 use Cobra.Compiler
 
 use MonoDevelop.Ide.TypeSystem
@@ -13,7 +11,7 @@ use MonoDevelop.CobraBinding
 
 namespace MonoDevelop.CobraBinding.TypeSystem
 
-class Parser implements ITypeSystemParser, IFoldingParser
+class Parser inherits TypeSystemParser implements IFoldingParser
 	"""
 	The type system parser provides a ParsedDocument required for adding 
 	information to the type system service to make the file contents available 
@@ -23,111 +21,38 @@ class Parser implements ITypeSystemParser, IFoldingParser
 	"""
 	
 	const TYPICAL_LINE_COUNT = 512 # 4 kB
-		
-	var _tabsToSpaces = false
-	var _indentToken = "\t"
-	var _md5Computer = MD5.create
-
-	# these dictionaries are keyed by filename
-	shared
-		var _md5s = Dictionary<of String, String>()
-		var _moduleCache = Dictionary<of String, CobraModule>()
-		var _errorCache = Dictionary<of String, List<of dynamic>>()
-
-
-	def _getCachedModule(fileName as String, md5s as Dictionary<of String, String>) as CobraModule?
-		"""
-		Returns the CobraModule with the given fileName from the cache or nil
-		if the module is not in the cache.
-		
-		IMPORTANT! Do not include tests in compilation otherwise calls to this
-		method will clear the cache.
-		"""
-		test miss
-			p = Parser()
-			p._clearCache
-			md5s = Dictionary<of String, String>()
-			assert p._getCachedModule('test.cobra', md5s) == nil
-
-			md5s['test.cobra'] = p._getMd5Hash('hello')
-			assert p._getCachedModule('test.cobra', md5s) == nil
-
-		test hit
-			p = Parser()
-			p._clearCache
-			hash = p._getMd5Hash('hello')
-			Parser._md5s['test.cobra'] = hash
-			t = Token('test.cobra', 1, 1, 1, 'hello', 'hello', nil)
-			ns = NameSpace(t, 'TestingNameSpace')
-			Parser._moduleCache['test.cobra'] = CobraModule('test.cobra', 0, "testing", ns)
-
-			md5s = Dictionary<of String, String>()
-			md5s['test.cobra'] = hash
-
-			module = p._getCachedModule('test.cobra', md5s)
-			assert module <> nil
-			assert module is Parser._moduleCache['test.cobra']
-
-		body
-			for key, hash in md5s
-				if not _md5s.containsKey(key) or _md5s[key] <> hash
-					# one or more of the source files has changed
-					return nil
-
-			if not _moduleCache.containsKey(fileName)
-				return nil
-
-			return _moduleCache[fileName]
-		
-
-	def _getMd5Hash(fileContents as String) as String
-		"""
-		Returns String representation of the  MD5 hash code for the given
-		input string.
-
-		See http://msdn.microsoft.com/en-us/library/system.security.cryptography.md5.aspx
-		"""
-		test
-			input = "class MD5Test"
-			p = Parser()
-			assert p._getMd5Hash(input) == "d8b8c1c757769993506767adab256d57"
-		body
-			hash = _md5Computer.computeHash(Encoding.utf8.getBytes(fileContents))
-
-			sb = StringBuilder()
-			for byte in hash
-				sb.append(byte.toString("x2"))
-
-			return sb.toString
-
 	
-	def _clearCache
-		_moduleCache.clear
-		_md5s.clear
-		_errorCache.clear
-	
-	
-	def parse(storeAst as bool, fileName as String, content as TextReader,
-				project as MonoDevelop.Projects.Project?) as ParsedDocument
+	def parse(storeAst as bool, fileName as String?, content as TextReader?,
+		project as MonoDevelop.Projects.Project?) as ParsedDocument
+		is override
 		"""
-		implements ITypeSystemParser.parse
-		
 		Generates folds and parses the specified file using the Cobra Parser.
 		Stores the resultant AST in the ParsedDocument when storeAst is true.
 		"""
 		module as CobraModule? = nil
-		visitor as MonoDevelop.CobraBinding.TypeSystem.Visitor? = nil
+		visitor as CobraModuleVisitor? = nil
+		
+		if fileName == nil or content == nil
+			# brand new file created outside the context of a Cobra project
+			return DefaultParsedDocument(fileName)
 		
 		source = content.readToEnd
 		if source == nil, source = ""
-
-		md5s = Dictionary<of String, String>()
-		md5s[fileName] = _getMd5Hash(source to !)
-
+		
+		/# Ignore type system parse requests for files that aren't open.  This is for
+		performance reasons.  If we were serializing and saving type system information,
+		maybe we wouldn't do this.  Instead, we just return folds for these requests. #/
+		workbench = MonoDevelop.Ide.IdeApp.workbench
+		if workbench == nil, return .parse(fileName, source)
+		if workbench.getDocument(fileName) == nil, return .parse(fileName, source)
+		
 		sourceMap = Dictionary<of String, String>()
 		sourceMap[fileName] = source to !
 		
 		refs = List<of String>()
+		
+		# workaround an issue with some types from .NET 4 on Mono such as HashSet<of T>
+		refs.add("System.Core")
 
 		if project <> nil
 			proj = project to DotNetProject #TODO to CobraProject
@@ -147,54 +72,21 @@ class Parser implements ITypeSystemParser, IFoldingParser
 							reader = StreamReader(path)
 							otherSource = reader.readToEnd
 							if otherSource == nil, otherSource = ""
-							md5s[path] = _getMd5Hash(otherSource to !)
 							sourceMap[path] = otherSource to !
 
-		compilerResults = List<of dynamic>(proj.files.count)
 		
-		lock _moduleCache # seems kind of brittle to lock directly on the dictionary but...meh
+		# parse the source files and bind the AST nodes to their types
+		compilerResults = CompilerManager.instance.parseAndBind(sourceMap, refs, fileName to !)
 		
-			# The latest changes break this caching mechanism
-			# TODO: Fix it!					
-		
-			module = _getCachedModule(fileName, md5s)
-			if module <> nil
-				# cache hit
-				#trace "cache hit for [fileName]"
-				if _errorCache.containsKey(module.fileName)
-					compilerResults.addRange(_errorCache[module.fileName])
-				
-			else
-				# cache miss
-				#trace "cache miss for [fileName]"
-				_clearCache
-
-				# parse the source files and bind the AST nodes to their types
-				try
-					compilerResults.addRange(CompilerManager.instance.parseAndBind(sourceMap, refs, fileName))
-				catch ex as Exception
-					# TODO: Figure out what to do in this case
-					trace ex.toString
-				
-				for entry in compilerResults
-					if entry inherits CobraModule
-						# cache this module for next time
-						_moduleCache[entry.fileName] = entry
-						_md5s[entry.fileName] = md5s[entry.fileName]
-
-						if entry.fileName == fileName
-							# this was the requested module
-							module = entry
-					else
-						# this entry is an error
-						if not _errorCache.containsKey(entry.fileName)
-							_errorCache[entry.fileName] = List<of dynamic>()
-						else
-							_errorCache[entry.fileName].add(entry)
+		for entry in compilerResults
+			if entry inherits CobraModule
+				if entry.fileName == fileName
+					# this was the requested module
+					module = entry
 
 		if module <> nil
 			# create type and region maps
-			visitor = MonoDevelop.CobraBinding.TypeSystem.Visitor()
+			visitor = CobraModuleVisitor()
 			visitor.visit(module)
 		
 		# add folds
@@ -202,29 +94,30 @@ class Parser implements ITypeSystemParser, IFoldingParser
 
 		if visitor <> nil
 			parsedDoc.regionMap = visitor.regionMap
+			parsedDoc.symbolTable = visitor.symbolTable
 		
 		# underline errors
 		for err in compilerResults
 			if not err inherits Module
 				if err inherits ParserException and err.fileName == fileName
 					parsedDoc.add(Error(ErrorType.Error, err.message, err.lineNum, err.colNum - 1))
-					trace err.message
+					
 				else if err inherits SourceException and err.fileName == fileName
 					parsedDoc.add(Error(ErrorType.Error, err.message, err.lineNum, err.colNum))
-					trace err.message + " " + err.lineNum.toString + " " + err.colNum.toString
+					
 				else
-					trace err.toString
+					print err.toString
 		
 		if storeAst
 			parsedDoc.ast = module
 
 		return parsedDoc
-		
-	def parse(fileName as String, content as String) as ParsedDocument
+
+	def parse(fileName as String?, content as String?) as ParsedDocument
 		"""
 		implements IFoldingParser.parse
-		
-		Parse the specified file to generate folds.
+
+		Parse the specified file only to generate folds.  Does not generate an AST.
 		"""
 		parsedDoc = ParsedCobraDocument(fileName, content)
 		
@@ -233,9 +126,8 @@ class Parser implements ITypeSystemParser, IFoldingParser
 		_addFolds(_getLineInformation(reader), folds)
 		
 		parsedDoc.add(folds)
-
+		
 		return parsedDoc
-	
 	
 	def _getLineInformation(reader as StringReader) as List<of LineInformation>
 		lines = List<of String>(.TYPICAL_LINE_COUNT)
@@ -280,31 +172,31 @@ class Parser implements ITypeSystemParser, IFoldingParser
 			
 			parser = Parser()
 			infoList = parser._getLineInformation(source)
-						
+			
 			assert infoList[0].opensComment == false
 			assert infoList[0].closesComment == false
 			assert infoList[0].opensDocString == false
 			assert infoList[0].closesDocString == false
 			assert infoList[0].isBlank == false
-									
+			
 			assert infoList[1].opensComment == false
 			assert infoList[1].closesComment == false
 			assert infoList[1].opensDocString == false
 			assert infoList[1].closesDocString == false
 			assert infoList[1].isBlank == true #
-						
+			
 			assert infoList[4].opensComment == false
 			assert infoList[4].closesComment == false
 			assert infoList[4].opensDocString == true #
 			assert infoList[4].closesDocString == false
 			assert infoList[4].isBlank == false
-						
+			
 			assert infoList[5].opensComment == false
 			assert infoList[5].closesComment == false
 			assert infoList[5].opensDocString == false
 			assert infoList[5].closesDocString == false
 			assert infoList[5].isBlank == false
-						
+				
 			assert infoList[6].opensComment == false
 			assert infoList[6].closesComment == false
 			assert infoList[6].opensDocString == false
@@ -340,23 +232,23 @@ class Parser implements ITypeSystemParser, IFoldingParser
 			inDocString = false
 			docStringTag as String? = nil
 			infoList = List<of LineInformation>(lines.count)
-	
+			
 			for line in lines
-	
+				
 				info = LineInformation(line, inComment, inDocString, docStringTag, info)
-	
+				
 				if not inComment and info.opensComment
 					inComment = true
 				else if inComment and info.closesComment
 					inComment = false
-	
+				
 				if not inDocString and info.opensDocString
 					inDocString = true
 					docStringTag = info.docStringTag
 				else if inDocString and info.closesDocString
 					inDocString = false
 					docStringTag = nil
-	
+			
 				infoList.add(info)
 				
 			return infoList
@@ -434,67 +326,67 @@ class Parser implements ITypeSystemParser, IFoldingParser
 			if infoList.count < 2
 				# not enough lines to create a fold
 				return
-	
+			
 			commentCloser as ClosesDelimitedBlock = do(i as LineInformation)
 				return i.opensComment
-	
+			
 			docStringCloser as ClosesDelimitedBlock = do(i as LineInformation)
 				return i.opensDocString
-	
+			
 			lineNumber = infoList.count
 			curr as LineInformation? = infoList[lineNumber - 1]
-	
+			
 			endStack = Stack<of TextLocation>()
 			levelStack = Stack<of int>()
-	
+			
 			# go through the list backwards creating folds as we go
 			while curr <> nil
-	
+			
 				closer as ClosesDelimitedBlock? = nil
-	
+				
 				# skip blank lines
 				while curr.isBlank
 					curr = curr.previous
 					if curr == nil
 						return
 					lineNumber -= 1
-	
+				
 				# handle comment blocks and doc strings
 				if curr.closesComment
 					closer = commentCloser
 				else if curr.closesDocString
 					closer = docStringCloser
-	
+				
 				if closer <> nil
 					endLocation = TextLocation(lineNumber, curr.line.length + 1)
 					
 					if closer == docStringCloser
 					
-						level = _getIndentLevel(curr.line)
+						level = .getIndentLevel(curr.line)
 						if level > 0
 							if levelStack.count == 0 or (levelStack.count > 0 and levelStack.peek < level)
 								/# We need to make sure the doc string
 								closes with its containing block #/
 								levelStack.push(level)
 								endStack.push(endLocation)
-	
+					
 					# we won't have a line that closes a delimited block without one that opens it
 					blockText = curr to !
 					while not closer(blockText)
 						blockText = blockText.previous to !
 						lineNumber -= 1
-	
+					
 					curr = blockText
 					startLocation = TextLocation(lineNumber, curr.line.length + 2)
 					folds.add(FoldingRegion(DomRegion(startLocation, endLocation), FoldType.Comment))
 					curr = curr.previous
 					lineNumber -= 1
 					continue
-		
+				
 				# handle indent blocks (ignore commented lines)
 				if not curr.line.trimStart.startsWith("#")
-				
-					level = _getIndentLevel(curr.line)
+					
+					level = .getIndentLevel(curr.line)
 					
 					# should we close any regions?
 					while levelStack.count > 0 and levelStack.peek > level
@@ -511,26 +403,62 @@ class Parser implements ITypeSystemParser, IFoldingParser
 					else
 						# makes the following loop do nothing
 						first = level + 2
-																	
+					
 					for l in first : level + 1
 						levelStack.push(l)
 						endStack.push(TextLocation(lineNumber, curr.line.length + 1))
-	
+					
 				curr = curr.previous
 				lineNumber -= 1
 
-
-	def _getIndentLevel(line as String) as int
-		"""
-		Returns the number of indents for the given line.
-		"""
-		require
-			line.trim.length > 0
-		ensure
-			result >= 0
-		test
-			assert Parser()._getIndentLevel("print 'hello'") == 0
-			assert Parser()._getIndentLevel("\tprint 'hello'") == 1
-			assert Parser()._getIndentLevel("\t\tprint 'hello'") == 2
-		body
-			return (line.length - line.trimStart.length) // _indentToken.length
+	shared
+		def getIndentLevel(line as String) as int
+			"""
+			Returns the number of indents for the given line.
+			"""
+			ensure
+				result >= 0
+			test
+				assert .getIndentLevel("print 'hello'") == 0
+				assert .getIndentLevel("\tprint 'hello'") == 1
+				assert .getIndentLevel("\t\tprint 'hello'") == 2
+			body
+				return line.length - line.trimStart.length
+		
+		var _declStarters = @[
+			"def ",
+			"var ",
+			"get ",
+			"set ",
+			"pro ",
+			"class ",
+			"interface ",
+			"struct ",
+		]
+		
+		def isStartingDecl(line as String) as bool
+			"""
+			Returns true if the line is an unfinished declaration such
+			as 'def foo' or 'var _bar' but not 'def foo ' and not 'var _bar is'
+			"""
+			test
+				assert Parser.isStartingDecl("class ")
+				assert Parser.isStartingDecl("\tdef ")
+				assert Parser.isStartingDecl("\tdef foo(")
+				assert Parser.isStartingDecl("\t\tdef foo")
+				assert Parser.isStartingDecl("    def bar")
+				assert not Parser.isStartingDecl("use ")
+				
+				assert not Parser.isStartingDecl("class Bar ")
+				assert not Parser.isStartingDecl("\t\tdef foo ")
+				assert not Parser.isStartingDecl("    def foo is")
+				assert not Parser.isStartingDecl("use MonoDevelop.Cobr")
+			body
+				trimmed = line.trimStart
+				if trimmed.indexOf(c' ') == trimmed.lastIndexOf(c' ')
+					# only one or zero spaces in the trimmed line of text, might be declaring something
+					for starter in _declStarters
+						if trimmed.startsWith(starter)
+							return true
+				
+				return false

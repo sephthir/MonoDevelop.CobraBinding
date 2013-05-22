@@ -1,0 +1,310 @@
+use Cobra.Compiler
+
+use MonoDevelop.CobraBinding
+
+use MonoDevelop.Ide.CodeCompletion
+
+use ICSharpCode.NRefactory.Completion
+
+namespace MonoDevelop.CobraBinding.Completion
+
+class DataFactory
+	"""
+	Provides completion data entries and data lists.
+	"""
+
+	shared
+	
+		def _createKeywordList(keywords as String[]) as CobraCompletionList
+			list = CobraCompletionList()
+		
+			for kw in keywords
+				list.add(kw, Icons.keyword)
+				
+			return list
+				
+	
+		var _keywordsTopLevel = @[
+			"use",
+			"namespace",
+			"class",
+			"interface",
+			"struct",
+			"mixin",
+			"enum",
+			"sig",
+			"extend",
+			"adds",
+			"inherits",
+			"implements",
+			"has",
+			"is",
+		]
+		
+		var _kwListTopLevel as CobraCompletionList?
+		
+		get keywordListTopLevel as CobraCompletionList
+			/# I think we technically have a race condition here
+			   but it's pretty benign and locking is expensive, soooooo...meh #/
+			if _kwListTopLevel == nil
+				_kwListTopLevel = _createKeywordList(_keywordsTopLevel)
+			return _kwListTopLevel to !
+		
+		var _keywordsFollowingIs = @[
+			"public",
+			"protected",
+			"private",
+			"internal",
+			"partial",
+			"extern",
+			"abstract",
+			"override",
+		]
+		
+		var _kwListFollowingIs as CobraCompletionList?
+		
+		get keywordListFollowingIs as CobraCompletionList
+			if _kwListFollowingIs == nil
+				_kwListFollowingIs = _createKeywordList(_keywordsFollowingIs)
+			return _kwListFollowingIs to !
+		
+		var _keywordsInBox = @[
+			"is",
+			"shared",
+			"override",
+			"new",
+			"private",
+			"public",
+			"protected",
+			"internal",
+			"virtual",
+			"nonvirtual",
+			"abstract",
+			"extern",
+			"partial",
+			"readonly",
+			
+			"def",
+			"var",
+			"test",
+			"invariant",
+			"cue init",
+			"var",
+			"as",
+			"def",
+			"pro",
+			"get",
+			"set",
+			"from",
+			
+			"class",
+			"interface",
+			"struct",
+			"mixin",
+			"enum",
+			"sig",
+		]
+		
+		var _kwListInBox as CobraCompletionList?
+		
+		get keywordListInBox as CobraCompletionList
+			if _kwListInBox == nil
+				_kwListInBox = _createKeywordList(_keywordsInBox)
+			return _kwListInBox to !
+		
+		var _keywordsInMethod = @[
+			"require",
+			"ensure",
+			"test",
+			"body",
+			
+			"print",
+			"stop",
+			"pass",
+			"lock",
+			"using",
+			"try",
+			"catch",
+			"success",
+			"finally",
+			"throw",
+			"assert",
+			"expect",
+			"trace",
+			"if",
+			"and",
+			"or",
+			"not",
+			"in",
+			"else",
+			"branch",
+			"on",
+			"any",
+			"all",
+			"for",
+			"get",
+			"while",
+			"post",
+			"break",
+			"continue",
+			"yield",
+			"ref",
+			"do",
+			"this",
+			"base",
+			"return",
+			"listen",
+			"raise",
+			"ignore",
+		]
+		
+		var _kwListInMethod as CobraCompletionList?
+		
+		get keywordListInMethod as CobraCompletionList
+			if _kwListInMethod == nil
+				_kwListInMethod = _createKeywordList(_keywordsInMethod)
+			return _kwListInMethod to !
+		
+		var _keywordsCobraTypes = @[
+			"bool",
+			"char",
+			"int",
+			"uint",
+			"float",
+			"decimal",
+			"number",
+			"dynamic"
+		]
+		
+		var _kwListCobraTypes as CobraCompletionList?
+		
+		get keywordListCobraTypes as CobraCompletionList
+			if _kwListCobraTypes == nil
+				_kwListCobraTypes = _createKeywordList(_keywordsCobraTypes)
+			return _kwListCobraTypes to !
+		
+		var _keywordsLiterals = @[
+			"true",
+			"false",
+			"nil"
+		]
+		
+		var _kwListLiterals as CobraCompletionList?
+		
+		get keywordListLiterals as CobraCompletionList
+			if _kwListLiterals == nil
+				_kwListLiterals = _createKeywordList(_keywordsLiterals)
+			return _kwListLiterals to !
+
+		def createNodeData(node as INamedNode) as NamedNodeData
+			"""
+			Returns a single entry to be added to a completion data list for the given AST node.
+			"""
+			return NamedNodeData(node)
+		
+		def createEnumMembersList(e as EnumDecl) as CobraCompletionList
+			data = CobraCompletionList()
+			for d in e.declsInOrder
+				data.add(NamedNodeData(d))
+			return data
+		
+		def createBoxMembersList(box as Box) as BoxMembersList
+			"""
+			Include all members of the given Box.
+			"""
+			return BoxMembersList(box)
+			
+		def createBoxInstanceMembersList(box as Box) as BoxMembersList
+			"""
+			Only includes public non-shared members.
+			"""
+			filter as BoxMembersList.Filter = do(m as IBoxMember)
+				return not m.isShared and "public" in m.isNames
+			return BoxMembersList(box, filter)
+			
+		def createBoxSharedMembersList(box as Box) as BoxMembersList
+			"""
+			Only includes public shared members.
+			"""
+			filter as BoxMembersList.Filter = do(m as IBoxMember)
+				if "public" in m.isNames
+					# only check isShared for BoxMember subclasses
+					# otherwise things like nested class decls do
+					# not get included in completion proposals.
+					if m inherits BoxMember
+						return m.isShared
+					else
+						# probably a nested class declaration
+						return true
+				return false
+			return BoxMembersList(box, filter)
+			
+		def createMethodVarsList(method as AbstractMethod) as MethodVarsList
+			return MethodVarsList(method)
+		
+		def createNameSpaceDeclsList(nameSpace as NameSpace) as NameSpaceDeclsList
+			if nameSpace.isUnified or nameSpace.unifiedNameSpace == nil
+				return NameSpaceDeclsList(nameSpace)
+			else
+				return NameSpaceDeclsList(nameSpace.unifiedNameSpace)
+		
+		def createModuleDeclsList(ast as CobraModule) as CobraCompletionList
+			"""
+			Returns all declarations that are visible in the context of the given
+			Cobra module.
+			
+			TODO: Cache completion lists from implict use statements.  They don't change.
+			"""
+			dataList = CobraCompletionList()
+			
+			topNs = ast.topNameSpace
+			dataList.addRange(NameSpaceDeclsList(topNs))
+			
+			for useStmt in topNs.useDirectives
+				try
+					if not useStmt.didBindUse, useStmt.bindUse
+					ns = useStmt.boundNameSpace
+					if ns <> nil, dataList.addRange(NameSpaceDeclsList(ns))
+				catch ex as Exception
+					trace ex.message
+			
+			key = CobraLanguageBinding.AddOnKeys.globalNameSpace
+			if topNs.addOnValues.containsKey(key)
+				globalNS = topNs.addOnValues[key] to NameSpace
+				dataList.addRange(NameSpaceDeclsList(globalNS))
+			
+			return .uniqueCompletionEntries(dataList)
+			
+		def createSubNameSpaceList(ns as NameSpace) as CobraCompletionList
+			"""
+			Only return namespace decls from the given namespace.
+			"""
+			subNameSpaces = CobraCompletionList()
+			for d in ns.declsInOrder
+				if d inherits NameSpace
+					subNameSpaces.add(NamedNodeData(d))
+			return subNameSpaces
+			
+		def uniqueCompletionEntries(dataList as CobraCompletionList) as CobraCompletionList
+			"""
+			Return unique completion data entries from the given list.
+			"""
+			test
+				initialList = CobraCompletionList()
+				initialList.add("foo", Icons.error, "", "")
+				initialList.add("foo", Icons.error, "", "")
+				initialList.add("bar", Icons.error, "", "")
+				initialList.add("bar", Icons.error, "", "")
+				initialList.add("baz", Icons.error, "", "")
+				filteredList = DataFactory.uniqueCompletionEntries(initialList)
+				assert filteredList.count == 3
+				assert initialList.count == 5
+			body
+				dataSet = HashSet<of String>()
+				uniqueData = CobraCompletionList()
+				
+				for d in dataList
+					if dataSet.add(d.toString)
+						uniqueData.add(d)
+				
+				return uniqueData
