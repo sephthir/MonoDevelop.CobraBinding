@@ -1,0 +1,44 @@
+use MonoDevelop.CobraBinding.TypeSystem
+
+use Mono.TextEditor
+use MonoDevelop.Ide
+
+namespace MonoDevelop.CobraBinding
+
+class TooltipProvider inherits Mono.TextEditor.TooltipProvider
+	
+	def getItem(editor as TextEditor?, offset as int)  as TooltipItem? is override
+		"""
+		Returns a tooltip to display for the identifier at the given offset or
+		nil if no corresponding node can be found.
+		"""
+		return TooltipItem("hello the offset is [offset]", offset, 1)
+		
+		/#
+		if editor == nil
+			return nil
+			
+		txtDoc = editor.document
+		if txtDoc == nil
+			return nil
+		
+		doc = IdeApp.workbench.getDocument(txtDoc.fileName)
+		if doc == nil _
+		or doc.parsedDocument == nil _
+		or not doc.parsedDocument inherits ParsedCobraDocument
+			return nil
+			
+		parsedDoc = doc.parsedDocument to ParsedCobraDocument
+		#TODO
+		return nil
+		#/
+		
+	def createTooltipWindow(editor as TextEditor?, offset as int,
+				modifierState as Gdk.ModifierType, item as TooltipItem?) as Gtk.Window? is protected, override
+		# TODO
+		if editor == nil or item == nil
+			return nil
+		
+		window = PopupWindow.TooltipWindow()
+		window.markup = item.item to String
+		return window
