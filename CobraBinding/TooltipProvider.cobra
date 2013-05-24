@@ -12,7 +12,18 @@ class TooltipProvider inherits Mono.TextEditor.TooltipProvider
 		Returns a tooltip to display for the identifier at the given offset or
 		nil if no corresponding node can be found.
 		"""
-		return TooltipItem("hello the offset is [offset]", offset, 1)
+		docLine = editor.getLineByOffset(offset)
+		sb = StringBuilder(editor.getTextBetween(docLine.offset, offset))
+		i = offset
+		while i < docLine.endOffset
+			c = editor.getCharAt(i)
+			if c.isLetter or c.isNumber or c == c'_'
+				sb.append(c)
+			else
+				break
+			i += 1
+		text = sb.toString.trim
+		return TooltipItem("offset = [offset]  text = [text]", offset, 1)
 		
 		/#
 		if editor == nil
