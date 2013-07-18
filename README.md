@@ -21,6 +21,8 @@ It currently supports the following features:
 
 * Limited Code Completion
 
+* Mouseover Tooltips
+
 
 Compiling and Installing
 ========================
@@ -45,7 +47,7 @@ Minimum Requirements
 
 * MonoDevelop 4.0 (Linux) or Xamarin Studio 4.0.2 (Windows/Mac)
 
-* Cobra 0.9.4
+* Cobra svn:3016 (post 0.9.4)
 
 Additional Requirements for Windows 64-bit
 --------------------------------------------
@@ -61,21 +63,17 @@ to the Cobra compiler as the same reflection mechanism will throw the same
 exception in C#.
 
 At this time, the workaround is to target the x86 platform when installing 
-Cobra.  If you have already installed Cobra, you'll need to reinstall it.  
+Cobra.  If you have already installed Cobra, you'll need to run the installer
+again.  You do not need to uninstall the previously installed version.
 
 Make sure to run these commands from the Visual Studio or Windows SDK Command 
 Prompt with the correct privileges (i.e. 'Run as Administrator').
 
-First, remove Cobra.Core and Cobra.Compiler from the GAC:
-
-    gacutil /u Cobra.Core
-    gacutil /u Cobra.Compiler
-
-Next, set your system to use the 32-bit CLR by executing this command:
+First, set your system to use the 32-bit CLR by executing this command:
 
     C:\Windows\Microsoft.NET\Framework64\v2.0.50727\Ldr64.exe setwow
 
-Then, run the Cobra installer again this time including the '-x86' option:
+Then, run the Cobra installer including the '-x86' option:
 
     cd\<path\to\cobra\workspace>\Source
     bin\install-from-workspace.bat -x86
@@ -88,12 +86,13 @@ You can verify success by executing:
 
     gacutil /l Cobra.Core
 
-Check the reported processorArchitecure. It should read 'x86' and not 
-'MSIL'.  Now, as long you make sure to target your Cobra programs to the x86 
-platform (the default option in MonoDevelop) when compiling, running, and 
-debugging, you shouldn't have any issues.  If you have .NET 4.5 installed, 
-you need to make sure you set .NET as the active runtime when debugging as not 
-all of 4.5 mscorlib has been implemented in Mono yet.
+Check the reported processorArchitecure. There should be an entry that reads
+'x86' instead of 'MSIL'.  It's okay to have multiple entries as long as at
+least one them is 'x86'.  Now, just make sure to target your Cobra programs
+to the x86 platform (the default option in MonoDevelop) when compiling,
+running, and debugging, and you shouldn't have any issues.  If you have
+.NET 4.5 installed, you need to make sure you set .NET as the active runtime
+when debugging as not all of 4.5 mscorlib has been implemented in Mono yet.
 
 NOTE: Some alternate workarounds may include compiling MonoDevelop from source 
 or maybe installing Cobra targetting the 'anycpu32bitpreferred' platform 
@@ -239,7 +238,7 @@ and change it to this:
     cobraArgs.append(' -include-tests:no')
 
 This will include contracts and asserts but not the unit tests.  It is
-important that tests not be included in the compiled version of addin as
+important that tests not be included in the compiled version of the addin as
 performance is significantly degraded otherwise. You shouldn't include
 this modification in your pull request though.  Enabling contracts in a
 "production" build would also negatively impact performance.
@@ -319,7 +318,7 @@ development...
 
 * Implement a Code Formatter for smarter indentation
 
-* Implement an Ambience class for tool tips and document outline support
+* Implement an Ambience class for document outline support
 
 * Fix bugs with code completion
 

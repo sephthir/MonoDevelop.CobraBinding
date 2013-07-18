@@ -65,6 +65,9 @@ class CobraBindingAddinInstaller
 		"TypeSystem[__s]LineInformation.cobra",
 		"TypeSystem[__s]CobraModuleVisitor.cobra",
 		"TypeSystem[__s]ParsedCobraDocument.cobra",
+		"Tooltips[__s]Extensions.cobra",
+		"Tooltips[__s]TooltipProvider.cobra",
+		"Tooltips[__s]KeywordData.cobra",
 		"Completion[__s]CobraCompletionList.cobra",
 		"Completion[__s]CobraCompletionTextEditorExtension.cobra",
 		"Completion[__s]DataFactory.cobra",
@@ -73,6 +76,7 @@ class CobraBindingAddinInstaller
 		"Completion[__s]NameSpaceDeclsList.cobra",
 		"Completion[__s]BoxMembersList.cobra",
 		"Completion[__s]MethodVarsList.cobra",
+		"Completion[__s]KeywordCompletionData.cobra",
 	]
 	
 	var _refs = [
@@ -90,11 +94,13 @@ class CobraBindingAddinInstaller
 		r"\Xamarin Studio\bin\MonoDevelop.Core.dll",
 		r"\Xamarin Studio\bin\MonoDevelop.Ide.dll",
 		r"\Xamarin Studio\bin\Mono.TextEditor.dll",
+		r"\Xamarin Studio\bin\MonoDevelop.Projects.Formats.MSBuild.exe",
 		r"\Xamarin Studio\bin\ICSharpCode.NRefactory.dll",
 		r"\GtkSharp\2.12\lib\gtk-sharp-2.0\gtk-sharp.dll",
 		r"\GtkSharp\2.12\lib\gtk-sharp-2.0\gdk-sharp.dll",
 		r"\GtkSharp\2.12\lib\gtk-sharp-2.0\glib-sharp.dll",
 		r"\GtkSharp\2.12\lib\gtk-sharp-2.0\atk-sharp.dll",
+		r"\GtkSharp\2.12\lib\Mono.Cairo\Mono.Cairo.dll",
 	]
 
 	def main

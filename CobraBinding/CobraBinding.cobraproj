@@ -90,6 +90,7 @@
     <Folder Include="Project\" />
     <Folder Include="TypeSystem\" />
     <Folder Include="Completion\" />
+    <Folder Include="Tooltips\" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AssemblyInfo.cs" />
@@ -109,7 +110,10 @@
     <Compile Include="Completion\BoxMembersList.cobra" />
     <Compile Include="Completion\NameSpaceDeclsList.cobra" />
     <Compile Include="Completion\CobraCompletionList.cobra" />
-    <Compile Include="TooltipProvider.cobra" />
+    <Compile Include="Tooltips\TooltipProvider.cobra" />
+    <Compile Include="Tooltips\KeywordData.cobra" />
+    <Compile Include="Completion\KeywordCompletionData.cobra" />
+    <Compile Include="Tooltips\Extensions.cobra" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Gui\Gui.csproj">
@@ -120,33 +124,24 @@
   <ItemGroup>
     <Reference Include="gtk-sharp, Version=2.12.0.0, Culture=neutral, PublicKeyToken=35e10195dab3c99f">
       <Private>False</Private>
+      <Package>gtk-sharp-2.0</Package>
     </Reference>
     <Reference Include="MonoDevelop.Ide, Version=2.6.0.0, Culture=neutral">
       <Private>False</Private>
+      <Package>monodevelop</Package>
     </Reference>
     <Reference Include="MonoDevelop.Core, Version=2.6.0.0, Culture=neutral">
       <Private>False</Private>
+      <Package>monodevelop</Package>
     </Reference>
     <Reference Include="ICSharpCode.NRefactory, Version=5.0.0.0, Culture=neutral, PublicKeyToken=d4bfe873e7598c49">
       <Private>False</Private>
+      <Package>monodevelop</Package>
     </Reference>
     <Reference Include="Mono.TextEditor, Version=1.0.0.0, Culture=neutral">
       <Private>False</Private>
+      <Package>monodevelop</Package>
     </Reference>
-    <Reference Include="ICSharpCode.NRefactory">
-      <HintPath>C:\Program Files %28x86%29\Xamarin Studio\bin\ICSharpCode.NRefactory.dll</HintPath>
-    </Reference>
-    <Reference Include="Mono.TextEditor">
-      <HintPath>C:\Program Files %28x86%29\Xamarin Studio\bin\Mono.TextEditor.dll</HintPath>
-    </Reference>
-    <Reference Include="MonoDevelop.Core">
-      <HintPath>C:\Program Files %28x86%29\Xamarin Studio\bin\MonoDevelop.Core.dll</HintPath>
-    </Reference>
-    <Reference Include="MonoDevelop.Ide">
-      <HintPath>C:\Program Files %28x86%29\Xamarin Studio\bin\MonoDevelop.Ide.dll</HintPath>
-    </Reference>
-    <Reference Include="Cobra.Compiler">
-      <HintPath>bin\Debug\Cobra.Compiler.dll</HintPath>
-    </Reference>
+    <Reference Include="Mono.Cairo" />
   </ItemGroup>
 </Project>

@@ -34,7 +34,7 @@ class CobraModuleVisitor inherits Cobra.Core.Visitor
 		assert wholeFileRegion.beginColumn == 1
 		assert wholeFileRegion.endLine == 229
 		assert wholeFileRegion.endColumn == Int32.maxValue
-		assert visitor.symbolTable[wholeFileRegion].count == 439 # includes all decls from implicit use directives
+		assert visitor.symbolTable[wholeFileRegion].count >= 432 # includes all decls from implicit use directives
 		
 		c = ast.topNameSpace.memberForName("HowToUseLists") to Class
 		classRegion = visitor.regionMap[c]
@@ -92,7 +92,7 @@ class CobraModuleVisitor inherits Cobra.Core.Visitor
 		assert wholeFileRegion.beginColumn == 1
 		assert wholeFileRegion.endLine == 34
 		assert wholeFileRegion.endColumn == Int32.maxValue
-		assert visitor.symbolTable[wholeFileRegion].count >= 530 # includes decls from System.Diagnostics
+		assert visitor.symbolTable[wholeFileRegion].count >= 525 # includes decls from System.Diagnostics
 		
 		ns = ast.topNameSpace.memberForName("Foo") to NameSpace
 		nsRegion = visitor.regionMap[ns]
@@ -148,7 +148,11 @@ class CobraModuleVisitor inherits Cobra.Core.Visitor
 		_symbolTable = Dictionary<of DomRegion, Dictionary<of String, INamedNode>>()
 
 	def _addRegion(node as ISyntaxNode)
-	
+		"""
+		Creates a DomRegion from the given node.  This region is used as a
+		key in the _symbolTable dictionary.  The corresponding value will
+		also be a dictionary mapping identifiers to nodes.
+		"""
 		beginToken = node.token
 		beginLine = beginToken.lineNum
 		beginCol = beginToken.colNum
@@ -157,6 +161,12 @@ class CobraModuleVisitor inherits Cobra.Core.Visitor
 		endLine = endToken.lineNum
 		endCol = Int32.maxValue - 1
 		
+		if beginLine == endLine
+			# we don't care about one-line regions...I think
+			# Example: "get foo from var"
+			# This will also ignore empty classes (i.e. classes with no declarations)
+			return
+		
 		if node is __ast.topNameSpace
 			# If the top-level namespace contains only a single class of the
 			# same size, we'll have a hash collision.  So, make sure the top
@@ -164,16 +174,6 @@ class CobraModuleVisitor inherits Cobra.Core.Visitor
 			endCol += 1
 		
 		region = DomRegion(_fileName, beginLine, beginCol, endLine, endCol)
-		if _symbolTable.containsKey(region)
-			# do not violate contract in __addIdentifiers
-			# TODO: we need to make sure the correct node
-			# has been saved in the _regionMap and the
-			# correct entries are in the _symbolTable
-			print "duplicate region [region]"
-			print "existing = [_symbolTable[region].keys]"
-			print "duplicate = [node]"
-			return
-		
 		_regionMap[node] = region
 
 		if node implements INamedNode
@@ -189,12 +189,12 @@ class CobraModuleVisitor inherits Cobra.Core.Visitor
 
 	def __addIdentifiers(node as INamedNode, region as DomRegion)
 		"""
-		Should only be called by _addRegion
+		Adds identifiers from the given node to the _symbolTable dictionary
+		using `region` as a key.
+		
+		Should only be called by _addRegion.
 		"""
-		require not _symbolTable.containsKey(region)
-		
 		_symbolTable[region] = Dictionary<of String, INamedNode>()
-		
 		idMap = _symbolTable[region]
 		
 		if node inherits NameSpace
@@ -357,9 +357,6 @@ class CobraModuleVisitor inherits Cobra.Core.Visitor
 				if filePath.endsWith(fileName)
 					sourceMap = Dictionary<of String, String>()
 					sourceMap[filePath] = code
-					results = cm.parseAndBind(sourceMap, refs, filePath)
-			for r in results
-				if r inherits CobraModule
-					return r
+					return cm.parseAndBind(sourceMap, refs, filePath).getAst<of CobraModule>
 			
 			throw FallThroughException()

@@ -1,5 +1,3 @@
-use System.Text.RegularExpressions
-
 use Cobra.Compiler
 
 use MonoDevelop.CobraBinding.TypeSystem
@@ -20,6 +18,9 @@ use ICSharpCode.NRefactory.TypeSystem
 namespace MonoDevelop.CobraBinding.Completion
 
 class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
+	"""
+	Provides support for code completion when editing Cobra source files.
+	"""
 
 	shared
 		/#
@@ -109,7 +110,7 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 		or parsedDoc.symbolTable == nil
 			return false
 
-		if _isInsideComment(context to !, parsedDoc to !, txtDoc to !)
+		if parsedDoc.isInsideComment(context.triggerOffset, txtDoc to !)
 			return false
 		
 		if _isInsideString(context to !, txtDoc to !)
@@ -250,17 +251,13 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 			#TODO handle parameter completion
 			return nil
 		
+		# extend code regions to include blank lines
+		parsedDoc.extendRegions(txtDoc to !)
+		
 		# get metadata from the parsed document to help
 		# us with creating completion results
 		ast = parsedDoc.getAst<of CobraModule>
-		regionMap = parsedDoc.regionMap to !
-		symbolTable = parsedDoc.symbolTable to !
-		
-		# extend code regions to include blank lines
-		_extendRegions(ast.topNameSpace, txtDoc to !, regionMap, symbolTable)
-		
-		# generate a reverse map (regions to nodes)
-		nodeMap = _createNodeMap(regionMap)
+		nodeMap = parsedDoc.createNodeMap to !
 		node as ISyntaxNode? = nil
 		
 		line = context.triggerLine
@@ -295,7 +292,7 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 			if col < 0
 				col = 0
 		
-		containingRegions = .getContainingRegions(line, col, regionMap.values)
+		containingRegions = parsedDoc.getContainingRegions(line, col)
 		
 		# the text before the completion chararacter should not include the completion character or the trigger word
 		if context.triggerLineOffset > 0 and lineText.length > 0
@@ -316,7 +313,7 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 		
 		if completionChar == c'_' and not prevChar.isLetterOrDigit
 			# protected/private member completion in the context of the current class
-			node = _getContainingBox(containingRegions, nodeMap)
+			node = parsedDoc.getContainingBox(containingRegions, nodeMap)
 			if node inherits Box
 				return BoxMembersList(node)
 			else
@@ -327,7 +324,7 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 			# member completion
 			if not prevChar.isLetterOrDigit and prevChar <> c')' and prevChar <> c']'
 				# return fields and methods in the context of the current class
-				node = _getContainingBox(containingRegions, nodeMap)
+				node = parsedDoc.getContainingBox(containingRegions, nodeMap)
 				if node inherits Box
 					return BoxMembersList(node)
 				else
@@ -335,7 +332,7 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 					return nil
 			else
 				# return fields and methods for the corresponding node
-				node = _resolveTextToNode(preceedingText, containingRegions, symbolTable)
+				node = parsedDoc.resolveTextToNode(preceedingText, containingRegions)
 				if node == nil, return nil
 				
 				if node inherits NameSpace
@@ -374,7 +371,6 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 						
 					if members <> nil, completionData.addRange(members)
 				
-				print "should be displaying members for [node]\n"
 				return DataFactory.uniqueCompletionEntries(completionData)
 		
 		# return completion data based on containing regions
@@ -392,27 +388,8 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 			completionData.addRange(_getTopNameSpaceCompletionData(ast))
 		
 		return completionData
-
-
-	def _resolveTextToNode(text as String, containingRegions as List<of DomRegion>,
-		symbolTable as Dictionary<of DomRegion, Dictionary<of String, INamedNode>>) as ISyntaxNode?
-		"""
-		Parses the given line of text and returns the corresponding node from the AST.
-		"""
-		ids = _getIdsFromText(text)
-		if ids.count == 0
-			print "couldn't parse identifers from text [text]\n"
-			return nil
 		
-		try
-			return _getNodeFromIds(ids, containingRegions, symbolTable)
-			
-		catch ArgumentException
-			# not a valid identifier
-			print "couldn't resolve [ids] to a node\n"
-			return nil
-			
-			
+		
 	def _getTypeForMemberCompletion(node as ISyntaxNode) as Cobra.Compiler.IType?
 		"""
 		Given a node, returns the type whose members should be used to generate the
@@ -447,255 +424,6 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 		
 		return nil
 	
-	def _isInsideComment(context as CodeCompletionContext, parsedDoc as ParsedCobraDocument,
-						txtDoc as TextDocument) as bool
-		"""
-		Returns true if the cursor is inside a comment region.
-		"""
-		line = context.triggerLine
-		col = context.triggerLineOffset
-		if line < 1, line = 1
-		if col < 0, col = 0
-		
-		lineText = txtDoc.getLineText(line) ? ""
-		
-		if _isInsideComment(line, col, lineText, parsedDoc.foldings to !)
-			return true
-			
-		# handle corner case with empty doc strings
-		prevLineText = txtDoc.getLineText(line - 1) ? ""
-		nextLineText = txtDoc.getLineText(line + 1) ? ""
-		if prevLineText.endsWith('"""') and nextLineText.endsWith('"""')
-			return true
-		else if prevLineText.endsWith("'''") and nextLineText.endsWith("'''")
-			return true
-		
-		return false
-	
-	def _isInsideComment(line as int, col as int, lineText as String, foldings as IEnumerable<of FoldingRegion>) as bool
-		"""
-		Returns true if the cursor is inside a comment region.
-		"""
-		require
-			line > 0
-			col >= 0
-		test lineComment
-			ext = CobraCompletionTextEditorExtension()
-			folds = List<of FoldingRegion>()
-			assert ext._isInsideComment(1, 0, "# comment", folds)
-			assert ext._isInsideComment(1, 1, "# comment", folds)
-			assert ext._isInsideComment(1, 15, "print 'hello' # comment", folds)
-		test commentBlock
-			ext = CobraCompletionTextEditorExtension()
-			folds = List<of FoldingRegion>()
-			folds.add(FoldingRegion(DomRegion(1, 1, 4, 1), FoldType.Comment))
-			assert ext._isInsideComment(2, 1, "print '#hello#'", folds)
-			folds.add(FoldingRegion(DomRegion(1, 1, 3, 1), FoldType.Undefined))
-			assert ext._isInsideComment(2, 0, "print '#hello#'", folds)
-		test notInComment
-			ext = CobraCompletionTextEditorExtension()
-			folds = List<of FoldingRegion>()
-			assert not ext._isInsideComment(1, 0, "print 'hello' # comment", folds)
-			assert not ext._isInsideComment(1, 1, "print 'hello' # comment", folds)
-			assert not ext._isInsideComment(1, 10, "print '#hello#'", folds)
-			folds.add(FoldingRegion(DomRegion(3, 1, 4, 1), FoldType.Comment))
-			assert not ext._isInsideComment(1, 1, "print 'hello' # comment", folds)
-			folds.add(FoldingRegion(DomRegion(1, 1, 2, 1), FoldType.Undefined))
-			assert not ext._isInsideComment(1, 0, "print 'hello' # comment", folds)
-		body
-			if lineText.length > 0
-				
-				if lineText.trimStart.startsWith("#")
-					return true
-				
-				inString = false
-				stringDelim as char? = nil
-				
-				if col > lineText.length, col = lineText.length
-				
-				for i in 0:col
-					c = lineText[i]
-					if c == c'"' or c == c"'"
-						if stringDelim == nil
-							stringDelim = c
-							inString = true
-						else if stringDelim == c
-							stringDelim = nil
-							inString = false
-					if c == c'#' and not inString
-						return true
-				
-			for fold in foldings
-				if fold.type == FoldType.Comment and fold.region.isInside(line, col)
-					return true
-				
-			return false
-	
-	
-	def _createNodeMap(regionMap as Dictionary<of ISyntaxNode, DomRegion>) as Dictionary<of DomRegion, ISyntaxNode>
-		"""
-		Returns a map of DomRegions to ISyntaxNodes given a map of ISyntaxNodes to DomRegions.
-		"""
-		ensure
-			all for node in regionMap.keys get node in result.values
-			all for region in regionMap.values get region in result.keys
-		body
-			nodeMap = Dictionary<of DomRegion, ISyntaxNode>()
-			for node, region in regionMap
-				nodeMap[region] = node
-				
-			return nodeMap
-	
-
-	def getContainingRegions(line as int, col as int, regions as DomRegion*) as List<of DomRegion>
-		"""
-		Returns a list of document regions from the given region stream that contain the 
-		given document location.
-		"""
-		ensure # we'll never return more regions than what was given
-			result.count <= List<of DomRegion>(regions).count
-		test
-			rs = List<of DomRegion>()
-			rs.add(DomRegion(1, 1, 10, 120))
-			rs.add(DomRegion(1, 1, 5, 120))
-			rs.add(DomRegion(6, 1, 10, 120))
-			rs.add(DomRegion(11, 1, 15, 120))
-			rs.add(DomRegion(12,1, 14, 120))
-
-			complExt = CobraCompletionTextEditorExtension()
-			assert complExt.getContainingRegions(1, 1, rs).count == 2
-			assert complExt.getContainingRegions(2, 1, rs).count == 2
-			assert complExt.getContainingRegions(5, 80, rs).count == 2
-			assert complExt.getContainingRegions(6, 10, rs).count == 2
-			assert complExt.getContainingRegions(11, 1, rs).count == 1
-			assert complExt.getContainingRegions(13, 1, rs).count == 2
-			assert complExt.getContainingRegions(15, 20, rs).count == 1
-			assert complExt.getContainingRegions(16, 1, rs).count == 0
-		body
-			containingRegions = List<of DomRegion>()
-			for r in regions
-				if r.isInside(line, col)
-					containingRegions.add(r)
-
-			return containingRegions
-		
-	
-	def _getContainingBox(regions as IList<of DomRegion>, nodeMap as Dictionary<of DomRegion, ISyntaxNode>) as Box?
-		"""
-		Iterates through the given regions and returns the innermost containing Box.
-		
-		Returns nil if none of the corresponding nodes inherit from Box.
-		"""
-		require
-			regions.count > 0
-			all for region in regions get nodeMap.containsKey(region)
-		test
-			ast = .createTestData
-			visitor = CobraModuleVisitor()
-			visitor.visit(ast)
-			
-			ext = CobraCompletionTextEditorExtension()
-			nodeMap = ext._createNodeMap(visitor.regionMap)
-			
-			regions = List<of DomRegion>()
-			for r in visitor.regionMap.values
-				regions.add(r)
-			
-			b = ext._getContainingBox(regions, nodeMap)
-			assert b.name == "Program"
-			
-			regions.remove(visitor.regionMap[b])
-			b = ext._getContainingBox(regions, nodeMap)
-			assert b.name.startsWith("Ninth")
-			
-			regions.remove(visitor.regionMap[b])
-			b = ext._getContainingBox(regions, nodeMap)
-			assert b.name.startsWith("Eighth")
-		body
-			containingBox as Box? = nil
-			innermostBeginLine = 0
-			
-			i = 0
-			while i < regions.count
-				region = regions[i]
-				if region.beginLine > innermostBeginLine
-					node = nodeMap[region]
-					if node inherits Box
-						innermostBeginLine = region.beginLine
-						containingBox = node
-				i += 1
-			return containingBox
-		
-	def _extendRegions(topNameSpace as NameSpace, txtDoc as TextDocument,
-						regionMap as Dictionary<of ISyntaxNode, DomRegion>,
-						symbolTable as Dictionary<of DomRegion, Dictionary<of String, INamedNode>?>)
-		"""
-		Extends the code regions in the given dictionaries to include blank lines.
-		"""
-		require topNameSpace in regionMap.keys
-		
-		extendedRegionMap = Dictionary<of ISyntaxNode, DomRegion>()
-		
-		for node, region in regionMap
-			
-			extendedRegion = _extendRegion(region, txtDoc)
-			
-			if node is topNameSpace
-				# special case to make sure the top-level namespace
-				# for the module encompasses all other regions
-				extendedRegion = DomRegion(region.fileName,
-				extendedRegion.beginLine, extendedRegion.beginColumn,
-				extendedRegion.endLine, Int32.maxValue)
-			
-			extendedRegionMap[node] = extendedRegion
-			
-			idMap as Dictionary<of String, INamedNode>? = nil
-			if symbolTable.tryGetValue(region, out idMap)
-				symbolTable.remove(region)
-				symbolTable[extendedRegion] = idMap
-				
-		for node, extendedRegion in extendedRegionMap
-			regionMap[node] = extendedRegion
-
-
-	def _extendRegion(region as DomRegion, txtDoc as TextDocument) as DomRegion
-		"""
-		Returns a copy of the given region but extends the last line
-		to include all blank lines that immediately follow it.
-		
-		The ending point will be the 0th column of the first non-blank
-		line.
-		"""
-		require
-			region.beginLine > 0
-		ensure
-			result.beginLine == region.beginLine
-			result.endLine >= region.endLine
-		body
-			beginText = txtDoc.getLineText(region.beginLine) ? ""
-			minIndentLevel = .ParserAlias.getIndentLevel(beginText)
-			fromLine = region.endLine + 1
-			untilLine = txtDoc.lineCount
-			
-			for line in fromLine:untilLine
-				text = txtDoc.getLineText(line)
-				if text <> nil _
-				and text.trim.length <> 0 _
-				and .ParserAlias.getIndentLevel(text to !) <= minIndentLevel
-					break
-			
-			if line == txtDoc.lineCount
-				# special case for end of document
-				col = Int32.maxValue - 1
-			else
-				col = 0
-			
-			extendedRegion = DomRegion(region.fileName, _
-			region.beginLine, region.beginColumn, _
-			line, col)
-			
-			return extendedRegion
-	
 	
 	def _isInsideString(context as CodeCompletionContext, txtDoc as TextDocument) as bool
 		"""
@@ -711,357 +439,8 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 		lineText = txtDoc.getLineText(line) ? ""
 		if col > lineText.length, col = lineText.length
 		
-		return _isInsideString(lineText.substring(0, col))
-	
-	
-	def _isInsideString(text as String) as bool
-		"""
-		Returns true if we should not provide code completion in the given
-		context because we are inside a string literal and not inside
-		[expression brackets].
-		"""
-		test basics
-			ext = CobraCompletionTextEditorExtension()
-			assert ext._isInsideString("s = 'Hello, wo")
-			assert ext._isInsideString('s = "Hello, wo')
-			
-			assert not ext._isInsideString("s = 'Hello, world!'")
-			assert not ext._isInsideString('s = "Hello, world!"')
-			assert not ext._isInsideString("print s")
-		test expressionBrackets
-			ext = CobraCompletionTextEditorExtension()
-			assert ext._isInsideString(ns's = "a [b] c')
-			assert not ext._isInsideString(ns's = "a [b')
-			assert ext._isInsideString(ns's = ns"a [b')
-		body
-			tag as char? = nil
-			quotes = @[c"'", c'"']
-			inString = false
-			inNonSubString = false
-			inSubExpr = false
-			
-			i = 0
-			while i < text.length
-				character = text[i]
-				
-				if tag == nil
-					if character in quotes
-						# string opening tag
-						tag = character
-						inString = true
-					else if character == c'n' and i + 2 < text.length
-						if text[i+1] == c's' and text[i+2] in quotes
-							# non-substituted string opening tag
-							tag = text[i+2]
-							inString = true
-							inNonSubString = true
-							i += 2
-				else
-					if character == tag
-						# string closing tag
-						inString = false
-						inNonSubString = false
-						tag = nil
-					else if not inNonSubString
-						if character == c'['
-							inSubExpr = true
-						else if inSubExpr and character == c']'
-							inSubExpr = false
-				i += 1
-					
-			if inNonSubString
-				return true
-			else if inSubExpr
-				return false
-			else
-				return inString
-	
-	
-	shared
-		# matches a valid identifier or the string "[]"
-		var rexIdentifier = Regex( _
-			r'[_a-zA-z][_a-zA-z0-9]*|\[\]', _
-			RegexOptions.Compiled _
-		)
+		return ParserAlias.isInsideString(lineText.substring(0, col), false)
 
-	def _getIdsFromText(text as String) as List<of String>
-		"""
-		Given a line of text, returns a list of trailing identifiers.
-
-		For example, given "foo = SomeSharedClass.someProp.", then this
-		method would return ['SomeSharedClass', 'someProp'].
-		"""
-		test basics
-			ext = CobraCompletionTextEditorExtension()
-			sampleText = "foo = "
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 0
-			
-			sampleText = "foo = SomeSharedClass.someProp."
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 2
-			assert ids[0] == "SomeSharedClass"
-			assert ids[1] == "someProp"
-			
-			sampleText = "foo = .someProp."
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 1
-			assert ids[0] == "someProp"
-		test openParenthesis
-			ext = CobraCompletionTextEditorExtension()
-			sampleText = "foo = .someMethod("
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 0
-			
-			sampleText = "foo = .someMethod(aParam"
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 1
-			assert ids[0] == "aParam"
-			
-			sampleText = "foo = .someMethod(aParam, anotherParam"
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 1
-			assert ids[0] == "anotherParam"
-			
-			sampleText = "foo = .someMethod(aParam.someOtherMethod(anotherParam"
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 1
-			assert ids[0] == "anotherParam"
-		test closedParenthesis
-			ext = CobraCompletionTextEditorExtension()
-			sampleText = "foo = .someMethod(aParam)."
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 1
-			assert ids[0] == "someMethod"
-			
-			sampleText = "foo = .someMethod(aParam).toString"
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 2
-			assert ids[0] == "someMethod"
-			assert ids[1] == "toString"
-			
-			sampleText = "foo = .someMethod(aParam).toString.replace(stringVar"
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 1
-			assert ids[0] == "stringVar"
-			
-			sampleText = "foo = .someMethod(aParam).toString.replace(stringVar, anotherStringVar)"
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 3
-			assert ids[0] == "someMethod"
-			assert ids[1] == "toString"
-			assert ids[2] == "replace"
-		test openBracket
-			ext = CobraCompletionTextEditorExtension()
-			sampleText = ns'foo = someArray['
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 0
-			
-			sampleText = ns'foo = someArray[index'
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 1
-			assert ids[0] == "index"
-			
-			sampleText = ns'foo = "hello [bar'
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 1
-			assert ids[0] == "bar"
-		test closedBracket
-			ext = CobraCompletionTextEditorExtension()
-			sampleText = ns'foo = someArray[index].'
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 2
-			assert ids[0] == "someArray"
-			assert ids[1] == ns'[]'
-			
-			sampleText = ns'foo = someArray[index].someProp'
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 3
-			assert ids[0] == "someArray"
-			assert ids[1] == ns'[]'
-			assert ids[2] == "someProp"
-			
-			sampleText = ns'if lineText[col].isLetter or lineText[col] == c"_" or lineText[col]'
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 2
-			assert ids[0] == "lineText"
-			assert ids[1] == ns'[]'
-		test parenthesisAndBracks
-			ext = CobraCompletionTextEditorExtension()
-			sampleText = ns'foo = someArray[index].someMethod(aParam).aProp[bar'
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 1
-			assert ids[0] == "bar"
-			
-			sampleText = ns'foo = someArray[index].someMethod(aParam).aProp[bar].'
-			ids = ext._getIdsFromText(sampleText)
-			assert ids.count == 5
-			assert ids[0] == "someArray"
-			assert ids[1] == ns'[]'
-			assert ids[2] == "someMethod"
-			assert ids[3] == "aProp"
-			assert ids[4] == ns'[]'
-		body
-			text = text.trim
-			if text.endsWith('(') or text.endsWith(ns'[')
-				# we are in the context of unmatched pair of parenthesis or brackets
-				# ignore all preceeding text
-				return List<of String>()
-			
-			startIndex = 0
-			openIndex = text.indexOf(c'(', startIndex)
-			while openIndex > 0 and openIndex < text.length
-				closeIndex = text.indexOf(c')', openIndex + 1)
-				if closeIndex >= 0
-					# we have a matching pair of parenthesis, remove them and the text they surround
-					removeCount = closeIndex - openIndex + 1
-					text = text.remove(openIndex, removeCount)
-					startIndex = openIndex
-				else if openIndex < text.length - 1
-					# we have an unmatched opening parenthesis with some trailing text, remove the preceeding text
-					text = text.substring(openIndex + 1)
-					startIndex = 0
-				openIndex = text.indexOf(c'(', startIndex)
-			
-			startIndex = 0
-			openIndex = text.indexOf(c'[', startIndex)
-			while openIndex > 0 and openIndex < text.length
-				closeIndex = text.indexOf(c']', openIndex + 1)
-				if closeIndex >= 0
-					# we have a matching pair of brackets, replace them and their contents with ".[]."
-					# that way, it will resolve to the indexer member of the parent correctly
-					removeCount = closeIndex - openIndex + 1
-					textToReplace = text.substring(openIndex, removeCount)
-					if textToReplace == ns'[]'
-						# this can happen if we use the same index variable multiple times in a line
-						# don't do a replacement in this case otherwise we'll enter an infinite loop
-						startIndex = closeIndex + 1
-					else
-						text = text.replace(textToReplace, ns'.[].')
-						startIndex = openIndex + 4
-				else if openIndex < text.length - 1
-					# we have an unmatched opening bracket with some trailing text, remove the preceeding text
-					text = text.substring(openIndex + 1)
-					startIndex = 0
-				openIndex = text.indexOf(c'[', startIndex)
-			
-			# split the text by whitespace
-			pieces = text.split
-			lastPiece = pieces[pieces.length - 1]
-			ids = List<of String>()
-			
-			match = CobraCompletionTextEditorExtension.rexIdentifier.match(lastPiece)
-			while match.success
-				if match.value.length > 0
-					ids.add(match.value)
-				match = match.nextMatch to !
-
-			return ids
-
-	def _getNodeFromIds(ids as List<of String>,
-						containingRegions as List<of DomRegion>,
-						symbolTable as Dictionary<of DomRegion, Dictionary<of String, INamedNode>>) as ISyntaxNode
-		"""
-		Given a list of identifiers, returns the syntax node in the AST
-		corresponding to the last valid idenfiier.
-
-		Throws an ArgumentException if no node is found.
-		"""
-		require
-			ids.count > 0
-			containingRegions.count > 0
-
-		test singleIdentifier
-			# setup
-			ids = ['Object']
-			regions = [DomRegion(1,1)]
-			bogusNode = Class('Object', List<of Cobra.Compiler.IType>())
-			symbolTable = Dictionary<of DomRegion, Dictionary<of String, INamedNode>>()
-			symbolTable[regions[0]] = Dictionary<of String, INamedNode>()
-			symbolTable[regions[0]]['Object'] = bogusNode
-
-			# the test
-			completionExtension = CobraCompletionTextEditorExtension()
-			assert completionExtension._getNodeFromIds(ids, regions, symbolTable) is bogusNode
-			
-		test multipleIdentifiers
-			#TODO
-			# setup
-			# the test
-			pass
-
-		body
-			#TODO: still feels ugly...
-			correspondingNode as ISyntaxNode? = nil
-			idMap as Dictionary<of String, INamedNode>? = nil
-
-			for region in containingRegions
-				
-				found = false
-
-				if symbolTable.tryGetValue(region, out idMap)
-				
-					for id, node in idMap
-					
-						if id == ids[0]
-							correspondingNode = node to ISyntaxNode
-							found = true
-							break
-							
-					if found, break
-				if found, break
-			
-			if found
-				# we found a node with this name, limit the rest of our search to this node
-				return _getNodeFromIds(ids[1:ids.count], correspondingNode to !)
-			
-			throw ArgumentException()
-			
-	def _getNodeFromIds(ids as List<of String>, parent as ISyntaxNode) as ISyntaxNode
-		"""
-		Given a list of identifiers, returns the syntax node in the AST
-		corresponding to the last valid idenfiier.
-
-		Throws an ArgumentException if no node is found.
-		"""
-		if ids.count == 0
-			return parent
-		
-		if parent implements INamedNode
-		
-			typ = parent.typeForReceiver
-			if typ inherits NilableType
-				typ = typ.nonNil
-				
-			if typ inherits PrimitiveType
-				typ = typ.box
-			else if typ inherits Cobra.Compiler.ArrayType
-				typ = typ.box
-			
-			if typ implements IContainer
-						
-				if typ inherits NameSpace
-					for useDirective in typ.useDirectives
-						if useDirective.boundNameSpace <> nil
-							nsMember = useDirective.boundNameSpace.memberForName(ids[0])
-							if nsMember <> nil
-								try
-									return _getNodeFromIds(ids[1:ids.count], nsMember to ISyntaxNode)
-								catch
-									throw ArgumentException()
-		
-				m = typ.memberForName(ids[0])
-				if m <> nil
-					try
-						return _getNodeFromIds(ids[1:ids.count], m to ISyntaxNode)
-					catch
-						throw ArgumentException()
-			else
-				print "[parent.typeForReceiver.name] does not implement IContainer"
-				print "Add a case for [parent.typeForReceiver.toString]\n"
-		
-		throw ArgumentException()
-	
 
 	def _getCompletionData(region as DomRegion, preceedingText as String, currText as String,
 							nodeMap as Dictionary<of DomRegion, ISyntaxNode>, ast as CobraModule) as ICompletionDataList
@@ -1110,7 +489,6 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 			"""
 			This function is only for supporting test methods.
 			"""
-			refs = List<of String>()
 			cm = MonoDevelop.CobraBinding.CompilerManager.instance
 			testData = MonoDevelop.CobraBinding.CompilerManager.readTestData("no_errors")
 
@@ -1118,15 +496,12 @@ class CobraCompletionTextEditorExtension inherits CompletionTextEditorExtension
 				if filePath.endsWith("ForCompletionTesting.cobra")
 					sourceMap = Dictionary<of String, String>()
 					sourceMap[filePath] = code
-					results = cm.parseAndBind(sourceMap, refs, filePath)
-			for r in results
-				if r inherits CobraModule
-					return r
+					return cm.parseAndBind(sourceMap, filePath).getAst<of CobraModule>
 			
 			throw FallThroughException()
 
 		class ParserAlias inherits MonoDevelop.CobraBinding.TypeSystem.Parser
 			"""
-			This is just to avoid a name conflict.
+			This is just to avoid a name conflict with Cobra.Compiler.Parser
 			"""
 			pass

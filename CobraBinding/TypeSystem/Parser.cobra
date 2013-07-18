@@ -17,7 +17,8 @@ class Parser inherits TypeSystemParser implements IFoldingParser
 	information to the type system service to make the file contents available 
 	for type lookup (code completion, resolving etc.).
 	
-	This parser also provides folds and underlines syntax errors.
+	This parser also provides folds, underlines syntax errors, and has
+	miscellaneous utility functions for parsing code.
 	"""
 	
 	const TYPICAL_LINE_COUNT = 512 # 4 kB
@@ -27,17 +28,15 @@ class Parser inherits TypeSystemParser implements IFoldingParser
 		is override
 		"""
 		Generates folds and parses the specified file using the Cobra Parser.
-		Stores the resultant AST in the ParsedDocument when storeAst is true.
+		Always stores the resultant AST in the ParsedDocument regardless of
+		the value of the storeAst parameter because we aren't using NRefactory
+		for completion information.
 		"""
-		module as CobraModule? = nil
-		visitor as CobraModuleVisitor? = nil
-		
 		if fileName == nil or content == nil
 			# brand new file created outside the context of a Cobra project
 			return DefaultParsedDocument(fileName)
 		
-		source = content.readToEnd
-		if source == nil, source = ""
+		source = content.readToEnd ? ""
 		
 		/# Ignore type system parse requests for files that aren't open.  This is for
 		performance reasons.  If we were serializing and saving type system information,
@@ -47,12 +46,8 @@ class Parser inherits TypeSystemParser implements IFoldingParser
 		if workbench.getDocument(fileName) == nil, return .parse(fileName, source)
 		
 		sourceMap = Dictionary<of String, String>()
-		sourceMap[fileName] = source to !
-		
+		sourceMap[fileName] = source
 		refs = List<of String>()
-		
-		# workaround an issue with some types from .NET 4 on Mono such as HashSet<of T>
-		refs.add("System.Core")
 
 		if project <> nil
 			proj = project to DotNetProject #TODO to CobraProject
@@ -63,54 +58,16 @@ class Parser inherits TypeSystemParser implements IFoldingParser
 			# to generate a full AST, we need all the Cobra source files in this project
 			for projFile in proj.files
 				
-				path = projFile.filePath.toString
+				if projFile.buildAction <> BuildAction.compile, continue
 				
-				if path <> fileName
-					if path.endsWith(CobraLanguageBinding.sourceFileExtension)
-						if projFile.buildAction == BuildAction.compile
-							
-							reader = StreamReader(path)
-							otherSource = reader.readToEnd
-							if otherSource == nil, otherSource = ""
-							sourceMap[path] = otherSource to !
+				path = projFile.filePath.toString
+				if path == fileName _
+				or not path.endsWith(CobraLanguageBinding.sourceFileExtension), continue
+				
+				sourceMap[path] = StreamReader(path).readToEnd ? ""
 
-		
-		# parse the source files and bind the AST nodes to their types
-		compilerResults = CompilerManager.instance.parseAndBind(sourceMap, refs, fileName to !)
-		
-		for entry in compilerResults
-			if entry inherits CobraModule
-				if entry.fileName == fileName
-					# this was the requested module
-					module = entry
-
-		if module <> nil
-			# create type and region maps
-			visitor = CobraModuleVisitor()
-			visitor.visit(module)
-		
-		# add folds
-		parsedDoc = .parse(fileName, source) to ParsedCobraDocument
-
-		if visitor <> nil
-			parsedDoc.regionMap = visitor.regionMap
-			parsedDoc.symbolTable = visitor.symbolTable
-		
-		# underline errors
-		for err in compilerResults
-			if not err inherits Module
-				if err inherits ParserException and err.fileName == fileName
-					parsedDoc.add(Error(ErrorType.Error, err.message, err.lineNum, err.colNum - 1))
-					
-				else if err inherits SourceException and err.fileName == fileName
-					parsedDoc.add(Error(ErrorType.Error, err.message, err.lineNum, err.colNum))
-					
-				else
-					print err.toString
-		
-		if storeAst
-			parsedDoc.ast = module
-
+		parsedDoc = CompilerManager.instance.parseAndBind(sourceMap, refs, fileName to !)
+		_addFolds(parsedDoc)
 		return parsedDoc
 
 	def parse(fileName as String?, content as String?) as ParsedDocument
@@ -120,16 +77,23 @@ class Parser inherits TypeSystemParser implements IFoldingParser
 		Parse the specified file only to generate folds.  Does not generate an AST.
 		"""
 		parsedDoc = ParsedCobraDocument(fileName, content)
+		_addFolds(parsedDoc)
+		return parsedDoc
 		
-		reader = StringReader(content)
+	def _addFolds(doc as ParsedCobraDocument)
+		"""
+		Adds folding regions to the given document.
+		"""
+		reader = StringReader(doc.content)
 		folds = List<of FoldingRegion>()
 		_addFolds(_getLineInformation(reader), folds)
-		
-		parsedDoc.add(folds)
-		
-		return parsedDoc
+		doc.add(folds)
 	
 	def _getLineInformation(reader as StringReader) as List<of LineInformation>
+		"""
+		Create a list of LineInformation objects that make it easier to
+		create folding regions.
+		"""
 		lines = List<of String>(.TYPICAL_LINE_COUNT)
 		
 		line = reader.readLine
@@ -384,7 +348,8 @@ class Parser inherits TypeSystemParser implements IFoldingParser
 					continue
 				
 				# handle indent blocks (ignore commented lines)
-				if not curr.line.trimStart.startsWith("#")
+				trimmedStart = curr.line.trimStart
+				if not trimmedStart.startsWith("#")
 					
 					level = .getIndentLevel(curr.line)
 					
@@ -393,7 +358,10 @@ class Parser inherits TypeSystemParser implements IFoldingParser
 						levelStack.pop
 						endLocation = endStack.pop
 						startLocation = TextLocation(lineNumber, curr.line.length + 2)
-						folds.add(FoldingRegion(DomRegion(startLocation, endLocation), FoldType.Undefined))
+						region = DomRegion(startLocation, endLocation)
+						fold = FoldingRegion(region, FoldType.Undefined)
+						fold.isFoldedByDefault = trimmedStart.startsWith("test")
+						folds.add(fold)
 					
 					# should we open any regions?
 					if levelStack.count == 0
@@ -462,3 +430,276 @@ class Parser inherits TypeSystemParser implements IFoldingParser
 							return true
 				
 				return false
+		
+		# matches a valid identifier or the string "[]"
+		var rexIdentifier = RegularExpressions.Regex( _
+			r'[_a-zA-z][_a-zA-z0-9]*|\[\]', _
+			RegularExpressions.RegexOptions.Compiled _
+		)
+	
+		def getIdsFromText(text as String) as List<of String>
+			"""
+			Given a line of text, returns a list of trailing identifiers.
+
+			For example, given "foo = SomeSharedClass.someProp.", then this
+			method would return ['SomeSharedClass', 'someProp'].
+			"""
+			test basics
+				sampleText = "foo = "
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 0
+				
+				sampleText = "foo = SomeSharedClass.someProp."
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 2
+				assert ids[0] == "SomeSharedClass"
+				assert ids[1] == "someProp"
+				
+				sampleText = "foo = .someProp."
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 1
+				assert ids[0] == "someProp"
+			test openParenthesis
+				sampleText = "foo = .someMethod("
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 0
+				
+				sampleText = "foo = .someMethod(aParam"
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 1
+				assert ids[0] == "aParam"
+				
+				sampleText = "foo = .someMethod(aParam, anotherParam"
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 1
+				assert ids[0] == "anotherParam"
+				
+				sampleText = "foo = .someMethod(aParam.someOtherMethod(anotherParam"
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 1
+				assert ids[0] == "anotherParam"
+			test closedParenthesis
+				sampleText = "foo = .someMethod(aParam)."
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 1
+				assert ids[0] == "someMethod"
+				
+				sampleText = "foo = .someMethod(aParam).toString"
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 2
+				assert ids[0] == "someMethod"
+				assert ids[1] == "toString"
+				
+				sampleText = "foo = .someMethod(aParam).toString.replace(stringVar"
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 1
+				assert ids[0] == "stringVar"
+				
+				sampleText = "foo = .someMethod(aParam).toString.replace(stringVar, anotherStringVar)"
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 3
+				assert ids[0] == "someMethod"
+				assert ids[1] == "toString"
+				assert ids[2] == "replace"
+			test openBracket
+				sampleText = ns'foo = someArray['
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 0
+				
+				sampleText = ns'foo = someArray[index'
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 1
+				assert ids[0] == "index"
+				
+				sampleText = ns'foo = "hello [bar'
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 1
+				assert ids[0] == "bar"
+			test closedBracket
+				sampleText = ns'foo = someArray[index].'
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 2
+				assert ids[0] == "someArray"
+				assert ids[1] == ns'[]'
+				
+				sampleText = ns'foo = someArray[index].someProp'
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 3
+				assert ids[0] == "someArray"
+				assert ids[1] == ns'[]'
+				assert ids[2] == "someProp"
+				
+				sampleText = ns'if lineText[col].isLetter or lineText[col] == c"_" or lineText[col]'
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 2
+				assert ids[0] == "lineText"
+				assert ids[1] == ns'[]'
+			test parenthesisAndBracks
+				sampleText = ns'foo = someArray[index].someMethod(aParam).aProp[bar'
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 1
+				assert ids[0] == "bar"
+				
+				sampleText = ns'foo = someArray[index].someMethod(aParam).aProp[bar].'
+				ids = .getIdsFromText(sampleText)
+				assert ids.count == 5
+				assert ids[0] == "someArray"
+				assert ids[1] == ns'[]'
+				assert ids[2] == "someMethod"
+				assert ids[3] == "aProp"
+				assert ids[4] == ns'[]'
+			body
+				text = text.trim
+				if text.endsWith('(') or text.endsWith(ns'[')
+					# we are in the context of unmatched pair of parenthesis or brackets
+					# ignore all preceeding text
+					return List<of String>()
+				
+				startIndex = 0
+				openIndex = text.indexOf(c'(', startIndex)
+				while openIndex > 0 and openIndex < text.length
+					closeIndex = text.indexOf(c')', openIndex + 1)
+					if closeIndex >= 0
+						# we have a matching pair of parenthesis, remove them and the text they surround
+						removeCount = closeIndex - openIndex + 1
+						text = text.remove(openIndex, removeCount)
+						startIndex = openIndex
+					else if openIndex < text.length - 1
+						# we have an unmatched opening parenthesis with some trailing text, remove the preceeding text
+						text = text.substring(openIndex + 1)
+						startIndex = 0
+					openIndex = text.indexOf(c'(', startIndex)
+				
+				startIndex = 0
+				openIndex = text.indexOf(c'[', startIndex)
+				while openIndex > 0 and openIndex < text.length
+					closeIndex = text.indexOf(c']', openIndex + 1)
+					if closeIndex >= 0
+						# we have a matching pair of brackets, replace them and their contents with ".[]."
+						# that way, it will resolve to the indexer member of the parent correctly
+						removeCount = closeIndex - openIndex + 1
+						textToReplace = text.substring(openIndex, removeCount)
+						if textToReplace == ns'[]'
+							# this can happen if we use the same index variable multiple times in a line
+							# don't do a replacement in this case otherwise we'll enter an infinite loop
+							startIndex = closeIndex + 1
+						else
+							text = text.replace(textToReplace, ns'.[].')
+							startIndex = openIndex + 4
+					else if openIndex < text.length - 1
+						# we have an unmatched opening bracket with some trailing text, remove the preceeding text
+						text = text.substring(openIndex + 1)
+						startIndex = 0
+					openIndex = text.indexOf(c'[', startIndex)
+				
+				# split the text by whitespace
+				pieces = text.split
+				lastPiece = pieces[pieces.length - 1]
+				ids = List<of String>()
+				
+				match = .rexIdentifier.match(lastPiece)
+				while match.success
+					if match.value.length > 0
+						ids.add(match.value)
+					match = match.nextMatch to !
+
+				return ids
+		
+		
+		def isInsideUnfinishedString(text as String) as bool
+			"""
+			Returns true if 'text' ends inside a string literal such as
+			
+			print "Hello, wo
+			
+			or
+			
+			print "The value is [someVar
+			"""
+			test basics
+				assert .isInsideUnfinishedString("s = 'Hello, wo")
+				assert .isInsideUnfinishedString('s = "Hello, wo')
+				
+				assert not .isInsideUnfinishedString("s = 'Hello, world!'")
+				assert not .isInsideUnfinishedString('s = "Hello, world!"')
+				assert not .isInsideUnfinishedString("print s")
+			test expressionBrackets
+				assert .isInsideUnfinishedString(ns's = "a [b] c')
+				assert .isInsideUnfinishedString(ns's = "a [b')
+				assert .isInsideUnfinishedString(ns's = ns"a [b')
+				
+				assert not .isInsideUnfinishedString(ns's = "a [b] c"')
+				assert not .isInsideUnfinishedString(ns's = "a [b]"')
+				assert not .isInsideUnfinishedString(ns's = ns"a [b]"')
+			body
+				return .isInsideString(text, true)
+		
+		def isInsideString(text as String, exprBracketsReturn as bool) as bool
+			"""
+			Returns true if 'text' ends inside a string literal such as
+			
+			print "Hello, wo
+			
+			If we are inside [expression brackets], then the value of the
+			'exprBracketsReturn' parameter will be returned.
+			"""
+			test
+				assert .isInsideString(ns's = "a [b] c', true)
+				assert .isInsideString(ns's = "a [b] c', false)
+				
+				assert .isInsideString(ns's = "a [b', true)
+				assert not .isInsideString(ns's = "a [b', false)
+				
+				assert .isInsideString(ns's = ns"a [b', true)
+				assert .isInsideString(ns's = ns"a [b', false)
+				
+				assert not .isInsideString(ns's = "a [b] c"', true)
+				assert not .isInsideString(ns's = "a [b] c"', false)
+				
+				assert not .isInsideString(ns's = "a [b]"', true)
+				assert not .isInsideString(ns's = "a [b]"', false)
+				
+				assert not .isInsideString(ns's = ns"a [b]"', true)
+				assert not .isInsideString(ns's = ns"a [b]"', false)
+			body
+				tag as char? = nil
+				quotes = @[c"'", c'"']
+				inString = false
+				inNonSubString = false
+				inSubExpr = false
+				
+				i = 0
+				while i < text.length
+					character = text[i]
+					
+					if tag == nil
+						if character in quotes
+							# string opening tag
+							tag = character
+							inString = true
+						else if character == c'n' and i + 2 < text.length
+							if text[i+1] == c's' and text[i+2] in quotes
+								# non-substituted string opening tag
+								tag = text[i+2]
+								inString = true
+								inNonSubString = true
+								i += 2
+					else
+						if character == tag
+							# string closing tag
+							inString = false
+							inNonSubString = false
+							tag = nil
+						else if not inNonSubString
+							if character == c'['
+								inSubExpr = true
+							else if inSubExpr and character == c']'
+								inSubExpr = false
+					i += 1
+						
+				if inNonSubString
+					return true
+				else if inSubExpr
+					return exprBracketsReturn
+				else
+					return inString

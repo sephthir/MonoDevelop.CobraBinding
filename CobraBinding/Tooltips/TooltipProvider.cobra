@@ -1,0 +1,201 @@
+use Cobra.Compiler
+
+use MonoDevelop.CobraBinding.TypeSystem
+use MonoDevelop.CobraBinding.Completion
+
+use Mono.TextEditor
+use MonoDevelop.Ide
+
+namespace MonoDevelop.CobraBinding.Tooltips
+
+class TooltipProvider inherits Mono.TextEditor.TooltipProvider
+
+	shared
+		var declKeyword as Dictionary<of Type, String> = {
+			NameSpace: "namespace ",
+			Class: "class",
+			Interface: "interface",
+			Struct: "struct",
+			EnumDecl: "enum ",
+			Mixin: "mixin",
+			Extension: "extension",
+			BoxVar: "var",
+			BoxConst: "const",
+			BoxEvent: "event",
+			Method: "def",
+			MemberOverload: "def",
+			MethodSig: "sig",
+		}
+		
+		
+		def createTooltipMarkup(node as INamedNode) as String
+			"""
+			Returns the markup to be used inside a tooltip for the given node.
+			"""
+			return node.createTooltipMarkup
+		
+		
+		def createTooltipMarkup(keyword as String) as String?
+			"""
+			Returns the markup to be used inside a tooltip for the given keyword.
+			"""
+			description = KeywordData.instance.getDescription(keyword)
+			if description == nil or description.length == 0
+				return nil
+				
+			grammar = KeywordData.instance.getGrammarMarkup(keyword) ? keyword
+			
+			sb = StringBuilder()
+			sb.appendLine(grammar)
+			sb.appendLine
+			sb.append(description)
+			return sb.toString
+		
+		
+		def createMouseOverTooltip(node as INamedNode) as PopupWindow.TooltipWindow
+			"""
+			Returns a window to display for the given node suitable for use when hovering
+			the mouse over its identifier.
+			"""
+			window = PopupWindow.TooltipWindow()
+			window.markup = node.createTooltipMarkup
+			return window
+		
+		
+		def createMouseOverTooltip(keyword as String) as PopupWindow.TooltipWindow
+			"""
+			Returns a window to display for the given keyword suitable for use when hovering
+			the mouse over it in the text editor.
+			"""
+			window = PopupWindow.TooltipWindow()
+			window.markup = .createTooltipMarkup(keyword)
+			return window
+		
+		
+		def createCodeCompletionTooltip(node as INamedNode) as CodeCompletion.TooltipInformation
+			"""
+			Create and return a tooltip that will display alongside the completion data
+			entry for the given node.
+			"""
+			info = CodeCompletion.TooltipInformation()
+			
+			# a node may not have a type if we couldn't bind the types in the AST
+			try
+				signature = node.createTooltipMarkup
+			catch ex as Exception
+				signature = "Doh! Something went wrong trying to generate the signatureMarkup..."
+				trace ex.toString
+			info.signatureMarkup = signature
+			info.summaryMarkup = .createCodeCompletionSummaryMarkup(node)
+			return info
+		
+		
+		def createCodeCompletionSummaryMarkup(node as dynamic) as String
+			"""
+			Returns markup suitable for use in a completion tooltip that describes the given
+			'node'.
+			
+			TODO: Can we avoid dynamic typing here?  INamedNode doesn't have a docString property.
+			"""
+			try
+				summary = node.docString ? ""
+				# remove tab characters otherwise it messes up the formatting in the tooltip
+				summary = summary.replace("\t", "")
+				#TODO: fix line breaks in the doc string
+				return summary
+			catch
+				# This node doesn't have a doc string
+				return ""
+				
+		def createCodeCompletionTooltip(data as KeywordCompletionData) as CodeCompletion.TooltipInformation
+			"""
+			Create and return a tooltip that will display alongside the completion data
+			entry for the given keyword.
+			"""
+			info = CodeCompletion.TooltipInformation()
+			info.signatureMarkup = data.grammar
+			info.summaryMarkup = data.description
+			return info
+			
+		
+	# instance methods from here on (until the very last method)
+	def getItem(editor as TextEditor?, offset as int)  as TooltipItem? is override
+		"""
+		Returns data to be used to create a tooltip for the given document position.
+		"""
+		if editor == nil
+			return nil
+		
+		txtDoc = editor.document
+		if txtDoc == nil
+			return nil
+		
+		doc = IdeApp.workbench.getDocument(txtDoc.fileName)
+		if doc == nil _
+		or doc.parsedDocument == nil _
+		or not doc.parsedDocument inherits ParsedCobraDocument
+			return nil
+		
+		parsedDoc = doc.parsedDocument to ParsedCobraDocument
+		
+		if parsedDoc.isInsideComment(offset, txtDoc to !)
+			return nil
+		
+		# get the text exactly up to the cursor
+		docLine = txtDoc.getLineByOffset(offset)
+		lineText = txtDoc.getTextBetween(docLine.offset, offset) ? ""
+		if MonoDevelop.CobraBinding.TypeSystem.Parser.isInsideString(lineText, false)
+			return nil
+		
+		node = parsedDoc.resolveOffsetToNode(offset, txtDoc to !)
+		if node == nil
+			# maybe it was a keyword?
+			word = parsedDoc.resolveOffsetToWord(offset, txtDoc to !)
+			if word <> nil, return TooltipItem(word, offset, word.length)
+		
+		else if node implements INamedNode
+			return TooltipItem(node, offset, 1)
+		
+		# not enough information to create tooltip data
+		return nil
+	
+	
+	def createTooltipWindow(editor as TextEditor?, offset as int,
+				modifierState as Gdk.ModifierType, data as TooltipItem?) as Gtk.Window? is protected, override
+		"""
+		Creates the window to display the given tooltip data.
+		"""
+		or require
+			data implies (data.item inherits INamedNode or data.item inherits String)
+		body
+			if data == nil or data.item == nil
+				return nil
+			
+			item = data.item
+			if item inherits String
+				keyword = item
+				window = .createMouseOverTooltip(keyword)
+			else
+				node = item to INamedNode
+				window = .createMouseOverTooltip(node)
+				
+			if window.markup == nil or window.markup.length == 0
+				# markup could not be created
+				return nil
+				
+			return window
+	
+	
+	shared
+		def readTestData as ParsedCobraDocument
+			"""
+			This function is only for supporting test methods.
+			"""
+			cm = MonoDevelop.CobraBinding.CompilerManager.instance
+			testData = MonoDevelop.CobraBinding.CompilerManager.readTestData("no_errors")
+
+			for filePath, code in testData
+				if filePath.endsWith("ForTooltipTesting.cobra")
+					return cm.parseAndBind({filePath: code}, filePath)
+			
+			throw FallThroughException()
