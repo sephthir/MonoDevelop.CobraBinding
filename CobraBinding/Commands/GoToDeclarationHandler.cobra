@@ -1,0 +1,8 @@
+use MonoDevelop.Components.Commands
+
+namespace MonoDevelop.CobraBinding.Commands
+
+class GoToDeclarationHandler inherits CommandHandler
+	
+	def run is protected, override
+		trace this
